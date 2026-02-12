@@ -23,14 +23,79 @@ import java.util.regex.Pattern;
 
 public class AnalyzeCustomPropertiesTask extends DefaultTask {
 
+    /**
+     * Matches Spring @Value annotations with property placeholders.
+     * <p>
+     * Pattern breakdown:
+     * <ul>
+     *   <li>{@code @Value} - Literal annotation name</li>
+     *   <li>{@code \\(\\s*} - Opening parenthesis with optional whitespace</li>
+     *   <li>{@code ["']} - Single or double quote</li>
+     *   <li>{@code \\$\\}{@code {}} - Property placeholder start</li>
+     *   <li>{@code ([^}]+)} - <b>Group 1:</b> Property key (any characters except</li>
+     *   <li>{@code (?::([^}]*))?} - <b>Group 2:</b> Optional default value after colon</li>
+     *   <li>{@code \\}} - Closing brace of placeholder</li>
+     *   <li>{@code ["']} - Closing quote</li>
+     * </ul>
+     * <p>
+     * Examples matched:
+     * <ul>
+     *   <li>{@code @Value("${app.name}")} → key: "app.name", default: null</li>
+     *   <li>{@code @Value("${server.port:8080}")} → key: "server.port", default: "8080"</li>
+     *   <li>{@code @Value('${db.host:localhost}')} → key: "db.host", default: "localhost"</li>
+     * </ul>
+     */
     private static final Pattern VALUE_PATTERN = Pattern.compile(
             "@Value\\(\\s*[\"']\\$\\{([^}]+)(?::([^}]*))?\\}[\"']\\s*\\)"
     );
 
+    /**
+     * Matches Spring @ConfigurationProperties annotations to extract the prefix.
+     * <p>
+     * Pattern breakdown:
+     * <ul>
+     *   <li>{@code @ConfigurationProperties} - Literal annotation name</li>
+     *   <li>{@code \\(\\s*} - Opening parenthesis with optional whitespace</li>
+     *   <li>{@code (?:prefix\\s*=\\s*)?} - Optional "prefix = " (non-capturing group)</li>
+     *   <li>{@code ["']} - Single or double quote</li>
+     *   <li>{@code ([^"']+)} - <b>Group 1:</b> The prefix value (any characters except quotes)</li>
+     *   <li>{@code ["']} - Closing quote</li>
+     * </ul>
+     * <p>
+     * Examples matched:
+     * <ul>
+     *   <li>{@code @ConfigurationProperties("app.database")} → prefix: "app.database"</li>
+     *   <li>{@code @ConfigurationProperties(prefix = "app.mail")} → prefix: "app.mail"</li>
+     *   <li>{@code @ConfigurationProperties(  prefix="app.cache"  )} → prefix: "app.cache"</li>
+     * </ul>
+     */
     private static final Pattern CONFIG_PROPS_CLASS_PATTERN = Pattern.compile(
             "@ConfigurationProperties\\(\\s*(?:prefix\\s*=\\s*)?[\"']([^\"']+)[\"']\\s*\\)"
     );
 
+    /**
+     * Matches private field declarations to extract field names.
+     * <p>
+     * Pattern breakdown:
+     * <ul>
+     *   <li>{@code private} - Literal 'private' keyword</li>
+     *   <li>{@code \\s+} - One or more whitespace characters</li>
+     *   <li>{@code \\S+} - The field type (any non-whitespace characters)</li>
+     *   <li>{@code \\s+} - One or more whitespace characters</li>
+     *   <li>{@code (\\w+)} - <b>Group 1:</b> The field name (word characters: letters, digits, underscore)</li>
+     *   <li>{@code \\s*;} - Optional whitespace and semicolon</li>
+     * </ul>
+     * <p>
+     * Examples matched:
+     * <ul>
+     *   <li>{@code private String username;} → fieldName: "username"</li>
+     *   <li>{@code private int maxConnections;} → fieldName: "maxConnections"</li>
+     *   <li>{@code private boolean sslEnabled;} → fieldName: "sslEnabled"</li>
+     * </ul>
+     * <p>
+     * Note: Field names are converted to kebab-case (e.g., maxConnections → max-connections)
+     * when combined with the @ConfigurationProperties prefix.
+     */
     private static final Pattern FIELD_PATTERN = Pattern.compile(
             "private\\s+\\S+\\s+(\\w+)\\s*;"
     );
