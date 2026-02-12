@@ -1,0 +1,32 @@
+plugins {
+    id 'java-gradle-plugin'
+    id 'groovy'
+    id 'maven-publish'
+}
+
+group = 'com.tpeters'
+version = '1.0.0-SNAPSHOT'
+description = 'Custom Property Analyzer for Spring Boot'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+gradlePlugin {
+    plugins {
+        customPropertyAnalyzer {
+            id = 'com.tpeters.custom-property-analyzer'
+            implementationClass = 'com.tpeters.custompropertyanalyzer.CustomPropertyAnalyzerPlugin'
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation gradleApi()
+}
