@@ -28,9 +28,42 @@ buildscript {
 apply plugin: 'com.tpeters.custom-property-analyzer'
 ```
 
-## Example Output
+## Output
 
-When running the `analyzeCustomProperties` task, you will see an analysis result output like this:
+By default, running the `analyzeCustomProperties` task will create a `.json` file with all properties that have been found
+in the analysis. It will be stored in `build/reports/custom-properties-analysis.json` in the following format:
+
+```json
+{
+  "projectName": "my-project",
+  "analysisDate": "Fri Feb 13 00:22:25 CET 2026",
+  "totalProperties": 4,
+  "properties": [
+    {
+      "key": "app.api.key",
+      "source": "VALUE_ANNOTATION",
+      "location": "EmailService.java"
+    },
+    {
+      "key": "app.database.max-connections",
+      "source": "CONFIGURATION_PROPERTIES",
+      "location": "DatabaseProperties.java"
+    },
+    {
+      "key": "app.database.password",
+      "source": "CONFIGURATION_PROPERTIES",
+      "location": "DatabaseProperties.java"
+    },
+    {
+      "key": "app.email.enabled:true",
+      "source": "VALUE_ANNOTATION",
+      "location": "EmailService.java"
+    }
+  ]
+}
+```
+
+You can also run the task with `--verbose` to directly get an output of the analysis results in the console:
 
 ```text
 > Task :analyzeCustomProperties
@@ -46,7 +79,6 @@ Custom Property Analysis Results
     
   • app.email.enabled:true
     Location: EmailService.java
-  ...
 
 @ConfigurationProperties Classes:
 ──────────────────────────────────────────────────
@@ -55,5 +87,4 @@ Custom Property Analysis Results
 
   • app.database.password
     Location: DatabaseProperties.java
-  ...
 ```

@@ -11,6 +11,7 @@ import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskAction;
+import org.gradle.api.tasks.options.Option;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -38,12 +39,24 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     @Optional
     private String outputFile = "custom-properties-analysis.json";
 
+    @Input
+    private boolean verboseMode = false;
+
     public String getOutputFile() {
         return outputFile;
     }
 
     public void setOutputFile(String outputFile) {
         this.outputFile = outputFile;
+    }
+
+    public boolean getVerboseMode() {
+        return verboseMode;
+    }
+
+    @Option(option = "verbose", description = "Enable verbose console output")
+    public void setVerboseMode(boolean verboseMode) {
+        this.verboseMode = verboseMode;
     }
 
     @TaskAction
@@ -64,7 +77,9 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
 
         exportToJson(properties);
 
-        printResults(properties);
+        if (verboseMode) {
+            printResults(properties);
+        }
     }
 
     private void analyzeJavaFile(File file, Set<PropertyInfo> properties) {
