@@ -160,50 +160,101 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
 
     private void analyzeJavaFile(File file, Set<PropertyInfo> properties) {
         try {
+            String filename = file.getName();
             String content = Files.readString(file.toPath());
-
-            // Find @Value annotations
-            Matcher valueMatcher = VALUE_PATTERN.matcher(content);
-            while (valueMatcher.find()) {
-                String propertyKey = valueMatcher.group(1).trim();
-                String defaultValue = valueMatcher.group(2);
-
-                properties.add(new PropertyInfo(
-                        propertyKey,
-                        defaultValue,
-                        PropertySource.VALUE_ANNOTATION,
-                        file.getName()
-                ));
-            }
-
-            // Find @ConfigurationProperties
-            Matcher configPropsMatcher = CONFIG_PROPS_CLASS_PATTERN.matcher(content);
-            if (configPropsMatcher.find()) {
-                String prefix = configPropsMatcher.group(1);
-
-                // Extract field names from the class
-                Matcher fieldMatcher = FIELD_PATTERN.matcher(content);
-                while (fieldMatcher.find()) {
-                    String fieldName = fieldMatcher.group(1);
-                    String fullPath = prefix + "." + camelToKebab(fieldName);
-                    properties.add(new PropertyInfo(
-                            fullPath,
-                            null,
-                            PropertySource.CONFIGURATION_PROPERTIES,
-                            file.getName()
-                    ));
-                }
-            }
-
+            properties.addAll(extractValueProperties(filename, content));
+            properties.addAll(extractConfigurationProperties(filename, content));
         } catch (IOException e) {
             getLogger().error("Failed to read file: " + file.getAbsolutePath(), e);
         }
     }
 
+    /**
+     * Finds all @Value annotations in a file and extract their PropertyInfos
+     * @param filename - The file name
+     * @param content - The file content
+     * @return Set of all extracted PropertyInfos
+     */
+    private Set<PropertyInfo> extractValueProperties(String filename, String content) {
+        Set<PropertyInfo> properties = new HashSet<>();
+        Matcher valueMatcher = VALUE_PATTERN.matcher(content);
+        
+        while (valueMatcher.find()) {
+            String propertyKey = valueMatcher.group(1).trim();
+            String defaultValue = valueMatcher.group(2);
+
+            properties.add(new PropertyInfo(
+                    propertyKey,
+                    defaultValue,
+                    PropertySource.VALUE_ANNOTATION,
+                    filename
+            ));
+        }
+        
+        return properties;
+    }
+
+    /**
+     * Finds all @ConfigurationProperties annotations in a file and extract their PropertyInfos based on the property prefix
+     * and field names.
+     *
+     * @param filename - The file name
+     * @param content - The file content
+     * @return Set of all extracted PropertyInfos
+     */
+    private Set<PropertyInfo> extractConfigurationProperties(String filename, String content) {
+        Set<PropertyInfo> properties = new HashSet<>();
+        Matcher configPropsMatcher = CONFIG_PROPS_CLASS_PATTERN.matcher(content);
+
+        if (configPropsMatcher.find()) {
+            String prefix = configPropsMatcher.group(1);
+
+            // Extract field names from the class
+            Matcher fieldMatcher = FIELD_PATTERN.matcher(content);
+            while (fieldMatcher.find()) {
+                String fieldName = fieldMatcher.group(1);
+                String fullPath = prefix + "." + camelToKebab(fieldName);
+                properties.add(new PropertyInfo(
+                        fullPath,
+                        null,
+                        PropertySource.CONFIGURATION_PROPERTIES,
+                        filename
+                ));
+            }
+        }
+
+        return properties;
+    }
+
+    /**
+     * Converts camelCase field names e.g. projectName to their kebab-case equivalent e.g. project-name.
+     * @param camelCase - The field name in camelCase
+     * @return The field name in kebab-case
+     */
     private String camelToKebab(String camelCase) {
         return camelCase.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase();
     }
 
+    /**
+     * Creates a .json file from a set of PropertyInfos in the format:
+     *
+     * <pre>
+     * {
+     *   "projectName": "my-project",
+     *   "analysisDate": "Fri Feb 13 13:23:49 CET 2026",
+     *   "totalProperties": 1,
+     *   "properties": [
+     *     {
+     *       "key": "property.key",
+     *       "defaultValue": "",
+     *       "source": "VALUE_ANNOTATION|CONFIGURATION_PROPERTIES",
+     *       "location": "File.java"
+     *     }]
+     * }
+     * </pre>
+     *
+     * @param properties - Set of PropertyInfos
+     */
     private void exportToJson(Set<PropertyInfo> properties) {
         File outputDir = new File(getProject().getBuildDir(), "reports");
         outputDir.mkdirs();
