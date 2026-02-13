@@ -47,7 +47,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
      * </ul>
      */
     private static final Pattern VALUE_PATTERN = Pattern.compile(
-            "@Value\\(\\s*[\"']\\$\\{([^}]+)(?::([^}]*))?\\}[\"']\\s*\\)"
+            "@Value\\(\\s*[\"']\\$\\{([^}:]+)(?::([^}]*))?\\}[\"']\\s*\\)"
     );
 
     /**
@@ -165,8 +165,9 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             // Find @Value annotations
             Matcher valueMatcher = VALUE_PATTERN.matcher(content);
             while (valueMatcher.find()) {
-                String propertyKey = valueMatcher.group(1);
+                String propertyKey = valueMatcher.group(1).trim();
                 String defaultValue = valueMatcher.group(2);
+
                 properties.add(new PropertyInfo(
                         propertyKey,
                         defaultValue,
