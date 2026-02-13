@@ -7,6 +7,8 @@ public class CustomPropertyAnalyzerPlugin implements Plugin<Project> {
 
     @Override
     public void apply(Project project) {
+        project.getPluginManager().apply("java");
+
         project.getTasks().register("analyzeCustomProperties", AnalyzeCustomPropertiesTask.class);
     }
 
