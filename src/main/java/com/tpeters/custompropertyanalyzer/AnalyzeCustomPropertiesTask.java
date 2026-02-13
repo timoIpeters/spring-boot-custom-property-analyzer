@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.gradle.api.DefaultTask;
+import org.gradle.api.Project;
 import org.gradle.api.file.FileTree;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Optional;
@@ -128,15 +129,25 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     public void analyze() {
         Set<PropertyInfo> properties = new TreeSet<>(Comparator.comparing(PropertyInfo::getFullPath));
 
-        SourceSetContainer sourceSets = getProject().getExtensions()
-                .getByType(SourceSetContainer.class);
+        Project project = getProject();
 
-        SourceSet mainSourceSet = sourceSets.getByName("main");
-        FileTree javaFiles = mainSourceSet.getAllJava();
+        Set<Project> projectsToAnalyze = project.getSubprojects().isEmpty()
+                ? Collections.singleton(project)
+                : project.getAllprojects();
 
-        for (File file : javaFiles.getFiles()) {
-            if (file.getName().endsWith(".java")) {
-                analyzeJavaFile(file, properties);
+        for (Project p : projectsToAnalyze) {
+            SourceSetContainer sourceSets = p.getExtensions().findByType(SourceSetContainer.class);
+            if (sourceSets == null) continue;
+
+            SourceSet mainSourceSet = sourceSets.findByName("main");
+            if (mainSourceSet == null) continue;
+
+            FileTree javaFiles = mainSourceSet.getAllJava();
+
+            for (File file : javaFiles.getFiles()) {
+                if (file.getName().endsWith(".java")) {
+                    analyzeJavaFile(file, properties);
+                }
             }
         }
 
