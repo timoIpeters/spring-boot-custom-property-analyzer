@@ -12,6 +12,25 @@ that where defined in the project (see  [Example Output](#example-output)):
 | Java       | 17      |
 | Gradle     | 7.5     |
 
+## Options
+
+```text
+analyzeCustomProperties [--verbose] [--outputFile=<filename>] [--additionalPropertiesPattern=<pattern>]
+
+Options:
+--verbose
+Print analysis results directly to the console in addition to the JSON report.
+
+--outputFile=<filename>
+Name of the generated report file. Default: custom-properties-analysis.json
+Output path: build/reports/<filename>
+
+--additionalPropertiesPattern=<pattern>
+Glob pattern for additional .properties files to include in default value
+resolution. By default only application.properties is consulted.
+Example: --additionalPropertiesPattern="application-*.properties"
+```
+
 ## Add to your Spring Boot project
 
 ```groovy
@@ -41,6 +60,7 @@ in the analysis. It will be stored in `build/reports/custom-properties-analysis.
   "properties": [
     {
       "key": "app.api.key",
+      "defaultValue": "testKey",
       "source": "VALUE_ANNOTATION",
       "location": "EmailService.java"
     },
@@ -55,7 +75,8 @@ in the analysis. It will be stored in `build/reports/custom-properties-analysis.
       "location": "DatabaseProperties.java"
     },
     {
-      "key": "app.email.enabled:true",
+      "key": "app.email.enabled",
+      "defaultValue": "true",
       "source": "VALUE_ANNOTATION",
       "location": "EmailService.java"
     }
@@ -63,7 +84,20 @@ in the analysis. It will be stored in `build/reports/custom-properties-analysis.
 }
 ```
 
-You can also run the task with `--verbose` to directly get an output of the analysis results in the console:
+## Default Property Analysis
+
+By default, the plugin only checks for default properties values in these two cases:
+
+1. `@Value` annotated properties are checked for a default in the form of `@Value(${my.prop:default})`
+2. Additionally, we check if the property is also defined in the `application.properties` file. Note that this file always takes precedence over the `@Value` default
+
+If you want to check within additional `.properties` files, use the `--additionalPropertiesPattern` option. Here you can
+add a `.properties` file name regex. For example `--additionalPropertiesPattern="application-*.properties"` would match
+additional profiles such as `application-dev.propertis`, `application-docker.properties`, etc.
+
+## Verbose
+
+You can run the task with `--verbose` to directly get an output of the analysis results in the console:
 
 ```text
 > Task :analyzeCustomProperties
