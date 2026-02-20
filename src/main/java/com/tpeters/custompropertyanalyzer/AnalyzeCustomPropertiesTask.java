@@ -17,7 +17,10 @@ import org.gradle.api.tasks.options.Option;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -120,7 +123,25 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     private String outputFile = "custom-properties-analysis.json";
 
     @Input
+    @Optional
+    private String additionalPropertiesPattern = null;
+
+    @Input
     private boolean verboseMode = false;
+
+    @Option(option = "additionalPropertiesPattern", description = "Glob pattern for additional .properties files to include in default value analysis (e.g. 'application-dev*.properties')")
+    public void setAdditionalPropertiesPattern(String additionalPropertiesPattern) {
+        this.additionalPropertiesPattern = additionalPropertiesPattern;
+    }
+
+    @Option(option = "verbose", description = "Enable verbose console output")
+    public void setVerboseMode(boolean verboseMode) {
+        this.verboseMode = verboseMode;
+    }
+
+    public String getAdditionalPropertiesPattern() {
+        return additionalPropertiesPattern;
+    }
 
     public String getOutputFile() {
         return outputFile;
@@ -132,11 +153,6 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
 
     public boolean getVerboseMode() {
         return verboseMode;
-    }
-
-    @Option(option = "verbose", description = "Enable verbose console output")
-    public void setVerboseMode(boolean verboseMode) {
-        this.verboseMode = verboseMode;
     }
 
     @TaskAction
@@ -159,10 +175,22 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     }
 
     /**
-     * Loads all .properties files from src/main/resources across all projects into a single map.
-     * Files are processed in alphabetical order, with application.properties applied last so it
-     * takes precedence over profile-specific files (e.g. application-dev.properties).
-     * If the same key appears in multiple files, the last value written wins.
+     * Loads property values used for default value resolution during analysis.
+     * <p>
+     * By default, only {@code application.properties} is read, as it is the only
+     * file guaranteed to be active regardless of the active Spring profile.
+     * <p>
+     * If {@code additionalPropertiesPattern} is set, any {@code .properties} file
+     * in {@code src/main/resources} whose name matches that glob pattern is also
+     * included. Values from additional files take precedence over
+     * {@code application.properties} values for the same key — last file wins.
+     * <p>
+     * Example pattern values:
+     * <ul>
+     *   <li>{@code application-dev.properties} - exact file name</li>
+     *   <li>{@code application-dev*.properties} - all dev variant files</li>
+     *   <li>{@code application-*.properties} - all profile-specific files</li>
+     * </ul>
      *
      * @return a map of property key → value
      */
@@ -177,18 +205,36 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             File resourcesDir = new File(p.getProjectDir(), "src/main/resources");
             if (!resourcesDir.exists()) continue;
 
-            File[] propFiles = resourcesDir.listFiles(
+            File[] allPropFiles = resourcesDir.listFiles(
                     f -> f.isFile() && f.getName().endsWith(".properties")
             );
-            if (propFiles == null) continue;
+            if (allPropFiles == null) continue;
 
-            // Sort so application.properties is loaded last and wins over profile variants
-            Arrays.sort(propFiles, Comparator.comparing(f -> {
-                if (f.getName().equals("application.properties")) return 1;
-                return 0;
-            }));
+            // Always load application.properties first as the baseline
+            List<File> filesToLoad = new ArrayList<>();
+            for (File f : allPropFiles) {
+                if (f.getName().equals("application.properties")) {
+                    filesToLoad.add(f);
+                    break;
+                }
+            }
 
-            for (File propFile : propFiles) {
+            // If a pattern is specified, also include matching files
+            if (additionalPropertiesPattern != null && !additionalPropertiesPattern.isBlank()) {
+                PathMatcher matcher = FileSystems.getDefault()
+                        .getPathMatcher("glob:" + additionalPropertiesPattern);
+                for (File f : allPropFiles) {
+                    if (!f.getName().equals("application.properties")
+                            && matcher.matches(Path.of(f.getName()))) {
+                        filesToLoad.add(f);
+                        if (verboseMode) {
+                            getLogger().lifecycle("Including additional properties file: " + f.getName());
+                        }
+                    }
+                }
+            }
+
+            for (File propFile : filesToLoad) {
                 try (var reader = new java.io.FileReader(propFile)) {
                     Properties props = new Properties();
                     props.load(reader);
@@ -206,7 +252,6 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
 
         return result;
     }
-
 
     private void analyzeJavaFile(File file, Set<PropertyInfo> properties, Map<String, String> projectProperties) {
         try {
