@@ -75,30 +75,44 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     );
 
     /**
-     * Matches private field declarations to extract field names.
+     * Matches private field declarations to extract both the field type and field name.
      * <p>
      * Pattern breakdown:
      * <ul>
      *   <li>{@code private} - Literal 'private' keyword</li>
      *   <li>{@code \\s+} - One or more whitespace characters</li>
-     *   <li>{@code \\S+} - The field type (any non-whitespace characters)</li>
+     *   <li>{@code (\\S+(?:<[^>]+>)?)} - <b>Group 1:</b> The field type, including optional generic
+     *       type parameters (e.g., {@code String}, {@code List<String>}, {@code Map<String, Foo>})</li>
      *   <li>{@code \\s+} - One or more whitespace characters</li>
-     *   <li>{@code (\\w+)} - <b>Group 1:</b> The field name (word characters: letters, digits, underscore)</li>
+     *   <li>{@code (\\w+)} - <b>Group 2:</b> The field name (word characters: letters, digits, underscore)</li>
      *   <li>{@code \\s*;} - Optional whitespace and semicolon</li>
      * </ul>
      * <p>
      * Examples matched:
      * <ul>
-     *   <li>{@code private String username;} → fieldName: "username"</li>
-     *   <li>{@code private int maxConnections;} → fieldName: "maxConnections"</li>
-     *   <li>{@code private boolean sslEnabled;} → fieldName: "sslEnabled"</li>
+     *   <li>{@code private String username;} → type: "String", fieldName: "username"</li>
+     *   <li>{@code private int maxConnections;} → type: "int", fieldName: "maxConnections"</li>
+     *   <li>{@code private boolean sslEnabled;} → type: "boolean", fieldName: "sslEnabled"</li>
+     *   <li>{@code private List<String> queries;} → type: "List<String>", fieldName: "queries"</li>
+     *   <li>{@code private Map<String, DatabaseConfig> dbConfigs;} → type: "Map<String, DatabaseConfig>", fieldName: "dbConfigs"</li>
+     *   <li>{@code private Author author;} → type: "Author", fieldName: "author"</li>
      * </ul>
+     * <p>
+     * The captured type (Group 1) is used to determine whether a field holds a complex user-defined
+     * object that should be recursively expanded, a Map whose value type should be expanded under a
+     * {@code [*]} wildcard key, or a simple/collection type that is recorded as a leaf property.
      * <p>
      * Note: Field names are converted to kebab-case (e.g., maxConnections → max-connections)
      * when combined with the @ConfigurationProperties prefix.
      */
     private static final Pattern FIELD_PATTERN = Pattern.compile(
-            "private\\s+\\S+\\s+(\\w+)\\s*;"
+            "private\\s+(\\S+(?:<[^>]+>)?)\\s+(\\w+)\\s*;"
+    );
+
+    private static final Set<String> SIMPLE_TYPES = Set.of(
+            "String", "int", "long", "double", "float", "boolean",
+            "Integer", "Long", "Double", "Float", "Boolean",
+            "BigDecimal", "BigInteger", "Duration", "LocalDate", "LocalDateTime"
     );
 
     @Input
@@ -129,34 +143,19 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     public void analyze() {
         Set<PropertyInfo> properties = new TreeSet<>(Comparator.comparing(PropertyInfo::getFullPath));
 
-        Project project = getProject();
-
-        Set<Project> projectsToAnalyze = project.getSubprojects().isEmpty()
-                ? Collections.singleton(project)
-                : project.getAllprojects();
-
-        for (Project p : projectsToAnalyze) {
-            SourceSetContainer sourceSets = p.getExtensions().findByType(SourceSetContainer.class);
-            if (sourceSets == null) continue;
-
-            SourceSet mainSourceSet = sourceSets.findByName("main");
-            if (mainSourceSet == null) continue;
-
-            FileTree javaFiles = mainSourceSet.getAllJava();
-
-            for (File file : javaFiles.getFiles()) {
-                if (file.getName().endsWith(".java")) {
-                    analyzeJavaFile(file, properties);
-                }
+        FileTree javaFiles = getJavaFiles(getProject());
+        for (File file : javaFiles.getFiles()) {
+            if (file.getName().endsWith(".java")) {
+                analyzeJavaFile(file, properties);
             }
         }
 
         exportToJson(properties);
-
         if (verboseMode) {
             printResults(properties);
         }
     }
+
 
     private void analyzeJavaFile(File file, Set<PropertyInfo> properties) {
         try {
@@ -208,22 +207,103 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
 
         if (configPropsMatcher.find()) {
             String prefix = configPropsMatcher.group(1);
-
-            // Extract field names from the class
-            Matcher fieldMatcher = FIELD_PATTERN.matcher(content);
-            while (fieldMatcher.find()) {
-                String fieldName = fieldMatcher.group(1);
-                String fullPath = prefix + "." + camelToKebab(fieldName);
-                properties.add(new PropertyInfo(
-                        fullPath,
-                        null,
-                        PropertySource.CONFIGURATION_PROPERTIES,
-                        filename
-                ));
-            }
+            extractFieldProperties(filename, content, prefix, properties, new HashSet<>());
         }
 
         return properties;
+    }
+
+    /**
+     * Recursively extracts properties from a class body, following complex field
+     * types into their own source files.
+     *
+     * @param filename   the file where these fields were found (for location reporting)
+     * @param content    the Java source content to scan for fields
+     * @param prefix     the current property key prefix (e.g. "app.database.author")
+     * @param properties the accumulator set
+     * @param visited    tracks already-visited type names to prevent infinite recursion
+     */
+    private void extractFieldProperties(
+            String filename,
+            String content,
+            String prefix,
+            Set<PropertyInfo> properties,
+            Set<String> visited
+    ) {
+        Project project = getProject();
+        FileTree javaFiles = getJavaFiles(project);
+
+        Matcher fieldMatcher = FIELD_PATTERN.matcher(content);
+        while (fieldMatcher.find()) {
+            String rawType  = fieldMatcher.group(1); // e.g. "Map<String,DatabaseConfig>", "Author", "boolean"
+            String fieldName = fieldMatcher.group(2);
+            String kebabField = camelToKebab(fieldName);
+            String fullPath = prefix + "." + kebabField;
+
+            // Map<K, ComplexType> → expand as prefix.[*].subField
+            String mapValueType = extractMapValueType(rawType);
+            if (mapValueType != null && isComplexType(mapValueType) && !visited.contains(mapValueType)) {
+                visited.add(mapValueType);
+                File typeFile = resolveTypeFile(mapValueType, javaFiles);
+                if (typeFile != null) {
+                    try {
+                        String typeContent = Files.readString(typeFile.toPath());
+                        // [*] indicates a dynamic map key
+                        extractFieldProperties(typeFile.getName(), typeContent,
+                                fullPath + ".[*]", properties, visited);
+                    } catch (IOException e) {
+                        getLogger().error("Failed to read file for type: " + mapValueType, e);
+                    }
+                }
+                // record the map property itself as a node as well
+                properties.add(new PropertyInfo(fullPath, null, PropertySource.CONFIGURATION_PROPERTIES, filename));
+                continue;
+            }
+
+            // Complex user-defined type → recurse into its fields
+            String baseType = rawType.replaceAll("<.*>", "").trim();
+            if (isComplexType(baseType) && !visited.contains(baseType)) {
+                visited.add(baseType);
+                File typeFile = resolveTypeFile(baseType, javaFiles);
+                if (typeFile != null) {
+                    try {
+                        String typeContent = Files.readString(typeFile.toPath());
+                        extractFieldProperties(typeFile.getName(), typeContent,
+                                fullPath, properties, visited);
+                    } catch (IOException e) {
+                        getLogger().error("Failed to read file for type: " + baseType, e);
+                    }
+                } else {
+                    // Type not found in sources (maybe external) — record the field as-is
+                    properties.add(new PropertyInfo(fullPath, null, PropertySource.CONFIGURATION_PROPERTIES, filename));
+                }
+                continue;
+            }
+
+            // Simple / Collection / Map<K, SimpleV> → record directly
+            properties.add(new PropertyInfo(fullPath, null, PropertySource.CONFIGURATION_PROPERTIES, filename));
+        }
+    }
+
+    /**
+     * Centralized FileTree retrieval to avoid repeating source set lookups in multiple places.
+     * @param project - The gradle project
+     * @return the java FileTree
+     */
+    private FileTree getJavaFiles(Project project) {
+        Set<Project> projectsToAnalyze = project.getSubprojects().isEmpty()
+                ? Collections.singleton(project)
+                : project.getAllprojects();
+        FileTree combined = null;
+        for (Project p : projectsToAnalyze) {
+            SourceSetContainer sourceSets = p.getExtensions().findByType(SourceSetContainer.class);
+            if (sourceSets == null) continue;
+            SourceSet mainSourceSet = sourceSets.findByName("main");
+            if (mainSourceSet == null) continue;
+            FileTree ft = mainSourceSet.getAllJava();
+            combined = (combined == null) ? ft : combined.plus(ft);
+        }
+        return combined != null ? combined : getProject().files().getAsFileTree();
     }
 
     /**
@@ -233,6 +313,53 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
      */
     private String camelToKebab(String camelCase) {
         return camelCase.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase();
+    }
+
+    /**
+     * Attempts to find the .java source file for a given simple class name within the files that were collected for analysis.
+     * @param simpleTypeName - The class name
+     * @param javaFiles - The file tree containing all java files
+     * @return The file based on the given class name
+     */
+    private File resolveTypeFile(String simpleTypeName, FileTree javaFiles) {
+        for (File file : javaFiles.getFiles()) {
+            if (file.getName().equals(simpleTypeName + ".java")) {
+                return file;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Checks if a given type name is a complex type that should be recursively expanded
+     *
+     * @param typeName - The type name
+     * @return true if the type name represents a complex user-defined object that should be recursively expanded
+     */
+    private boolean isComplexType(String typeName) {
+        String baseType = typeName.replaceAll("<.*>", "").trim();
+        return !SIMPLE_TYPES.contains(baseType)
+                && !baseType.equals("List")
+                && !baseType.equals("Set")
+                && !baseType.equals("Map")
+                && !baseType.startsWith("List<")
+                && Character.isUpperCase(baseType.charAt(0));
+    }
+
+    /**
+     * Given a raw field type string like "Map<String, DatabaseConfig>", returns the value type "DatabaseConfig",
+     * or null if not a Map or not parseable.
+     *
+     * @param rawType - The raw map field type
+     * @return Map value type or null if not a map or not parseable
+     */
+    private String extractMapValueType(String rawType) {
+        Pattern mapPattern = Pattern.compile("Map<[^,]+,\\s*([^>]+)>");
+        Matcher m = mapPattern.matcher(rawType);
+        if (m.find()) {
+            return m.group(1).trim();
+        }
+        return null;
     }
 
     /**
