@@ -143,10 +143,12 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     public void analyze() {
         Set<PropertyInfo> properties = new TreeSet<>(Comparator.comparing(PropertyInfo::getFullPath));
 
+        Map<String, String> projectProperties = loadProjectProperties();
+
         FileTree javaFiles = getJavaFiles(getProject());
         for (File file : javaFiles.getFiles()) {
             if (file.getName().endsWith(".java")) {
-                analyzeJavaFile(file, properties);
+                analyzeJavaFile(file, properties, projectProperties);
             }
         }
 
@@ -156,31 +158,91 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
         }
     }
 
+    /**
+     * Loads all .properties files from src/main/resources across all projects into a single map.
+     * Files are processed in alphabetical order, with application.properties applied last so it
+     * takes precedence over profile-specific files (e.g. application-dev.properties).
+     * If the same key appears in multiple files, the last value written wins.
+     *
+     * @return a map of property key → value
+     */
+    private Map<String, String> loadProjectProperties() {
+        Map<String, String> result = new LinkedHashMap<>();
 
-    private void analyzeJavaFile(File file, Set<PropertyInfo> properties) {
+        Set<Project> projectsToAnalyze = getProject().getSubprojects().isEmpty()
+                ? Collections.singleton(getProject())
+                : getProject().getAllprojects();
+
+        for (Project p : projectsToAnalyze) {
+            File resourcesDir = new File(p.getProjectDir(), "src/main/resources");
+            if (!resourcesDir.exists()) continue;
+
+            File[] propFiles = resourcesDir.listFiles(
+                    f -> f.isFile() && f.getName().endsWith(".properties")
+            );
+            if (propFiles == null) continue;
+
+            // Sort so application.properties is loaded last and wins over profile variants
+            Arrays.sort(propFiles, Comparator.comparing(f -> {
+                if (f.getName().equals("application.properties")) return 1;
+                return 0;
+            }));
+
+            for (File propFile : propFiles) {
+                try (var reader = new java.io.FileReader(propFile)) {
+                    Properties props = new Properties();
+                    props.load(reader);
+                    for (String key : props.stringPropertyNames()) {
+                        result.put(key, props.getProperty(key));
+                    }
+                    if (verboseMode) {
+                        getLogger().lifecycle("Loaded properties from: " + propFile.getName());
+                    }
+                } catch (IOException e) {
+                    getLogger().error("Failed to read properties file: " + propFile.getAbsolutePath(), e);
+                }
+            }
+        }
+
+        return result;
+    }
+
+
+    private void analyzeJavaFile(File file, Set<PropertyInfo> properties, Map<String, String> projectProperties) {
         try {
             String filename = file.getName();
             String content = Files.readString(file.toPath());
-            properties.addAll(extractValueProperties(filename, content));
-            properties.addAll(extractConfigurationProperties(filename, content));
+            properties.addAll(extractValueProperties(filename, content, projectProperties));
+            properties.addAll(extractConfigurationProperties(filename, content, projectProperties));
         } catch (IOException e) {
             getLogger().error("Failed to read file: " + file.getAbsolutePath(), e);
         }
     }
 
     /**
-     * Finds all @Value annotations in a file and extract their PropertyInfos
+     * Finds all @Value annotations in a file and extract their PropertyInfos. Also sets a default value if found.
+     * For the default value, a value in .properties files always "wins" against defaults directly added within the
+     * \@Value annotation
      * @param filename - The file name
      * @param content - The file content
      * @return Set of all extracted PropertyInfos
      */
-    private Set<PropertyInfo> extractValueProperties(String filename, String content) {
+    private Set<PropertyInfo> extractValueProperties(String filename, String content, Map<String, String> projectProperties) {
         Set<PropertyInfo> properties = new HashSet<>();
         Matcher valueMatcher = VALUE_PATTERN.matcher(content);
-        
+
         while (valueMatcher.find()) {
             String propertyKey = valueMatcher.group(1).trim();
             String defaultValue = valueMatcher.group(2);
+
+            if (defaultValue == null) {
+                defaultValue = projectProperties.get(propertyKey);
+            }
+
+            String propertiesFileValue = projectProperties.get(propertyKey);
+            if (propertiesFileValue != null) {
+                defaultValue = propertiesFileValue;
+            }
 
             properties.add(new PropertyInfo(
                     propertyKey,
@@ -189,7 +251,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                     filename
             ));
         }
-        
+
         return properties;
     }
 
@@ -201,17 +263,16 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
      * @param content - The file content
      * @return Set of all extracted PropertyInfos
      */
-    private Set<PropertyInfo> extractConfigurationProperties(String filename, String content) {
+    private Set<PropertyInfo> extractConfigurationProperties(String filename, String content, Map<String, String> projectProperties) {
         Set<PropertyInfo> properties = new HashSet<>();
         Matcher configPropsMatcher = CONFIG_PROPS_CLASS_PATTERN.matcher(content);
-
         if (configPropsMatcher.find()) {
             String prefix = configPropsMatcher.group(1);
-            extractFieldProperties(filename, content, prefix, properties, new HashSet<>());
+            extractFieldProperties(filename, content, prefix, properties, new HashSet<>(), projectProperties);
         }
-
         return properties;
     }
+
 
     /**
      * Recursively extracts properties from a class body, following complex field
@@ -228,7 +289,8 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             String content,
             String prefix,
             Set<PropertyInfo> properties,
-            Set<String> visited
+            Set<String> visited,
+            Map<String, String> projectProperties   // added
     ) {
         Project project = getProject();
         FileTree javaFiles = getJavaFiles(project);
@@ -250,7 +312,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                         String typeContent = Files.readString(typeFile.toPath());
                         // [*] indicates a dynamic map key
                         extractFieldProperties(typeFile.getName(), typeContent,
-                                fullPath + ".[*]", properties, visited);
+                                fullPath + ".[*]", properties, visited, projectProperties);
                     } catch (IOException e) {
                         getLogger().error("Failed to read file for type: " + mapValueType, e);
                     }
@@ -269,7 +331,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                     try {
                         String typeContent = Files.readString(typeFile.toPath());
                         extractFieldProperties(typeFile.getName(), typeContent,
-                                fullPath, properties, visited);
+                                fullPath, properties, visited, projectProperties);
                     } catch (IOException e) {
                         getLogger().error("Failed to read file for type: " + baseType, e);
                     }
@@ -281,7 +343,12 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             }
 
             // Simple / Collection / Map<K, SimpleV> → record directly
-            properties.add(new PropertyInfo(fullPath, null, PropertySource.CONFIGURATION_PROPERTIES, filename));
+            properties.add(new PropertyInfo(
+                    fullPath,
+                    projectProperties.get(fullPath),    // look up default from .properties
+                    PropertySource.CONFIGURATION_PROPERTIES,
+                    filename
+            ));
         }
     }
 
