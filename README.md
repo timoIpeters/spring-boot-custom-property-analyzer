@@ -40,7 +40,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.tpeters:custom-property-analyzer-plugin:1.0.0-SNAPSHOT'
+        classpath 'com.tpeters:custom-property-analyzer-plugin:1.0.1-SNAPSHOT'
     }
 }
 
