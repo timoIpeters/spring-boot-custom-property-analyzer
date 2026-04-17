@@ -252,7 +252,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                         Properties props = new Properties();
                         props.load(is);
                         for (String key : props.stringPropertyNames()) {
-                            result.put(key, props.getProperty(key));
+                            result.put(toCanonicalKey(key), props.getProperty(key));
                         }
                     } else {
                         Map<String, Object> yamlMap = yaml.load(is);
@@ -273,34 +273,75 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     }
 
     /**
-     * Recursively flattens a nested YAML map structure into a flat map of dot-notation keys.
-     * <p>
-     * For example, a YAML structure like:
-     * <pre>
-     * app:
-     *   server:
-     *     port: 8080
-     * </pre>
-     * is converted into a map entry with key {@code "app.server.port"} and value {@code "8080"}.
-     *
-     * @param prefix  The current key prefix being built (empty for the root level).
-     * @param yamlMap The current nested map being processed.
-     * @param result  The accumulator map where flattened property key-value pairs are stored.
-     */
+    * Recursively flattens a nested YAML map structure into a flat map of dot-notation keys.
+    * <p>
+    * For example, a YAML structure like:
+    * <pre>
+    * app:
+    *   server:
+    *     port: 8080
+    * </pre>
+    * is converted into a map entry with key {@code "app.server.port"} and value {@code "8080"}.
+    *
+    * @param prefix  The current key prefix being built (empty for the root level).
+    * @param yamlMap The current nested map being processed.
+    * @param result  The accumulator map where flattened property key-value pairs are stored.
+    */
     @SuppressWarnings("unchecked")
     private void flattenYaml(String prefix, Map<String, Object> yamlMap, Map<String, String> result) {
         for (Map.Entry<String, Object> entry : yamlMap.entrySet()) {
-            String key = prefix.isEmpty() ? entry.getKey() : prefix + "." + entry.getKey();
+            String key = prefix.isEmpty() ? toCanonicalKey(entry.getKey()) : prefix + "." + toCanonicalKey(entry.getKey());
             Object value = entry.getValue();
 
             if (value instanceof Map) {
                 flattenYaml(key, (Map<String, Object>) value, result);
             } else if (value instanceof List) {
+                // Support list indexing (e.g. app.list[0])
+                List<Object> list = (List<Object>) value;
+                for (int i = 0; i < list.size(); i++) {
+                    String listKey = key + "[" + i + "]";
+                    Object listValue = list.get(i);
+                    if (listValue instanceof Map) {
+                        flattenYaml(listKey, (Map<String, Object>) listValue, result);
+                    } else if (listValue != null) {
+                        result.put(listKey, listValue.toString());
+                    }
+                }
+                // store the full list as a string fallback
                 result.put(key, value.toString());
             } else if (value != null) {
                 result.put(key, value.toString());
             }
         }
+    }
+
+    /**
+    * Converts a key part or full key to its canonical kebab-case representation.
+    * @param key the key to normalize
+    * @return the normalized key
+    */
+    private String toCanonicalKey(String key) {
+        if (key == null) return null;
+
+        String[] segments = key.split("\\.");
+        StringBuilder sb = new StringBuilder();
+
+        for (int i = 0; i < segments.length; i++) {
+            String segment = segments[i];
+
+            if (segment.contains("[") && segment.endsWith("]")) {
+                int bracketIndex = segment.indexOf("[");
+                String baseName = segment.substring(0, bracketIndex);
+                String indexPart = segment.substring(bracketIndex);
+                sb.append(camelToKebab(baseName)).append(indexPart);
+            } else {
+                sb.append(camelToKebab(segment));
+            }
+
+            if (i < segments.length - 1) sb.append(".");
+        }
+
+        return sb.toString();
     }
 
     private void analyzeJavaFile(File file, Set<PropertyInfo> properties, Map<String, String> projectProperties) {
@@ -331,10 +372,10 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             String defaultValue = valueMatcher.group(2);
 
             if (defaultValue == null) {
-                defaultValue = projectProperties.get(propertyKey);
+                defaultValue = projectProperties.get(toCanonicalKey(propertyKey));
             }
 
-            String propertiesFileValue = projectProperties.get(propertyKey);
+            String propertiesFileValue = projectProperties.get(toCanonicalKey(propertyKey));
             if (propertiesFileValue != null) {
                 defaultValue = propertiesFileValue;
             }
@@ -440,7 +481,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             // Simple / Collection / Map<K, SimpleV> → record directly
             properties.add(new PropertyInfo(
                     fullPath,
-                    projectProperties.get(fullPath),    // look up default from .properties
+                    projectProperties.get(toCanonicalKey(fullPath)),
                     PropertySource.CONFIGURATION_PROPERTIES,
                     filename
             ));

@@ -73,4 +73,35 @@ class YamlPropertiesTest extends AbstractPluginTest {
 
         assertHasProperty("app.profile", "dev", "VALUE_ANNOTATION");
     }
+
+    @Test
+    void testRelaxedBindingAndListIndexing() throws IOException {
+        writeJavaSource(testProjectDir, "com.example", "ComplexService", """
+            package com.example;
+            import org.springframework.beans.factory.annotation.Value;
+            public class ComplexService {
+              @Value("${app.max-connections}")
+              private int max;
+              
+              @Value("${app.server-list[0]}")
+              private String firstServer;
+            }
+            """);
+
+        writeResourcesFile(testProjectDir, "application.yml", """
+            app:
+              maxConnections: 50
+              serverList:
+                - srv1
+                - srv2
+            """);
+
+        runAnalyze();
+        
+        // app.maxConnections (camelCase in YAML) should match app.max-connections (canonical lookup)
+        assertHasProperty("app.max-connections", "50", "VALUE_ANNOTATION");
+        
+        // app.serverList[0] should match app.server-list[0]
+        assertHasProperty("app.server-list[0]", "srv1", "VALUE_ANNOTATION");
+    }
 }
