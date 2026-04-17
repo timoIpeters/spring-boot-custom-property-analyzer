@@ -10,7 +10,7 @@ that where defined in the project (see  [Example Output](#example-output)):
 | Dependency | Version |
 |------------|---------|
 | Java       | 17      |
-| Gradle     | 7.5     |
+| Gradle     | 8.X     |
 
 ## Options
 
