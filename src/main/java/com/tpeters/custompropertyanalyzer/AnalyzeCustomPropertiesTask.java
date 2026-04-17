@@ -11,10 +11,13 @@ import org.gradle.api.file.RegularFile;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.*;
 import org.gradle.api.tasks.options.Option;
+import org.yaml.snakeyaml.Yaml;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -209,16 +212,19 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             if (!resourcesDir.exists()) continue;
 
             File[] allPropFiles = resourcesDir.listFiles(
-                    f -> f.isFile() && f.getName().endsWith(".properties")
+                    f -> f.isFile() && (f.getName().endsWith(".properties") || f.getName().endsWith(".yml") || f.getName().endsWith(".yaml"))
             );
             if (allPropFiles == null) continue;
 
-            // Always load application.properties first as the baseline
+            // Load baseline files in priority order: .properties first, then .yml, then .yaml
             List<File> filesToLoad = new ArrayList<>();
-            for (File f : allPropFiles) {
-                if (f.getName().equals("application.properties")) {
-                    filesToLoad.add(f);
-                    break;
+            String[] baselines = {"application.properties", "application.yml", "application.yaml"};
+            for (String baseline : baselines) {
+                for (File f : allPropFiles) {
+                    if (f.getName().equals(baseline)) {
+                        filesToLoad.add(f);
+                        break;
+                    }
                 }
             }
 
@@ -227,8 +233,10 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                 PathMatcher matcher = FileSystems.getDefault()
                         .getPathMatcher("glob:" + additionalPropertiesPattern);
                 for (File f : allPropFiles) {
-                    if (!f.getName().equals("application.properties")
-                            && matcher.matches(Path.of(f.getName()))) {
+                    boolean isBaseline = false;
+                    for (String b : baselines) if (f.getName().equals(b)) isBaseline = true;
+
+                    if (!isBaseline && matcher.matches(Path.of(f.getName()))) {
                         filesToLoad.add(f);
                         if (verboseMode) {
                             getLogger().lifecycle("Including additional properties file: " + f.getName());
@@ -237,12 +245,20 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                 }
             }
 
+            Yaml yaml = new Yaml();
             for (File propFile : filesToLoad) {
-                try (var reader = new java.io.FileReader(propFile)) {
-                    Properties props = new Properties();
-                    props.load(reader);
-                    for (String key : props.stringPropertyNames()) {
-                        result.put(key, props.getProperty(key));
+                try (InputStream is = new FileInputStream(propFile)) {
+                    if (propFile.getName().endsWith(".properties")) {
+                        Properties props = new Properties();
+                        props.load(is);
+                        for (String key : props.stringPropertyNames()) {
+                            result.put(key, props.getProperty(key));
+                        }
+                    } else {
+                        Map<String, Object> yamlMap = yaml.load(is);
+                        if (yamlMap != null) {
+                            flattenYaml("", yamlMap, result);
+                        }
                     }
                     if (verboseMode) {
                         getLogger().lifecycle("Loaded properties from: " + propFile.getName());
@@ -254,6 +270,37 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
         }
 
         return result;
+    }
+
+    /**
+     * Recursively flattens a nested YAML map structure into a flat map of dot-notation keys.
+     * <p>
+     * For example, a YAML structure like:
+     * <pre>
+     * app:
+     *   server:
+     *     port: 8080
+     * </pre>
+     * is converted into a map entry with key {@code "app.server.port"} and value {@code "8080"}.
+     *
+     * @param prefix  The current key prefix being built (empty for the root level).
+     * @param yamlMap The current nested map being processed.
+     * @param result  The accumulator map where flattened property key-value pairs are stored.
+     */
+    @SuppressWarnings("unchecked")
+    private void flattenYaml(String prefix, Map<String, Object> yamlMap, Map<String, String> result) {
+        for (Map.Entry<String, Object> entry : yamlMap.entrySet()) {
+            String key = prefix.isEmpty() ? entry.getKey() : prefix + "." + entry.getKey();
+            Object value = entry.getValue();
+
+            if (value instanceof Map) {
+                flattenYaml(key, (Map<String, Object>) value, result);
+            } else if (value instanceof List) {
+                result.put(key, value.toString());
+            } else if (value != null) {
+                result.put(key, value.toString());
+            }
+        }
     }
 
     private void analyzeJavaFile(File file, Set<PropertyInfo> properties, Map<String, String> projectProperties) {
