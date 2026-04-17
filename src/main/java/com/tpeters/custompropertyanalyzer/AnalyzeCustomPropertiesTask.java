@@ -123,6 +123,11 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     @org.gradle.api.tasks.Optional
     private String outputFile = "custom-properties-analysis.json";
 
+    @Option(option = "outputFile", description = "The name of the generated JSON report file")
+    public void setOutputFile(String outputFile) {
+        this.outputFile = outputFile;
+    }
+
     @Input
     @org.gradle.api.tasks.Optional
     private String additionalPropertiesPattern = null;
@@ -146,10 +151,6 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
 
     public String getOutputFile() {
         return outputFile;
-    }
-
-    public void setOutputFile(String outputFile) {
-        this.outputFile = outputFile;
     }
 
     public boolean getVerboseMode() {
@@ -426,7 +427,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             String prefix,
             Set<PropertyInfo> properties,
             Set<String> visited,
-            Map<String, String> projectProperties   // added
+            Map<String, String> projectProperties
     ) {
         Project project = getProject();
         FileTree javaFiles = getJavaFiles(project);
@@ -440,40 +441,47 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
 
             // Map<K, ComplexType> → expand as prefix.[*].subField
             String mapValueType = extractMapValueType(rawType);
-            if (mapValueType != null && isComplexType(mapValueType) && !visited.contains(mapValueType)) {
-                visited.add(mapValueType);
-                File typeFile = resolveTypeFile(mapValueType, javaFiles);
-                if (typeFile != null) {
-                    try {
-                        String typeContent = Files.readString(typeFile.toPath());
-                        // [*] indicates a dynamic map key
-                        extractFieldProperties(typeFile.getName(), typeContent,
-                                fullPath + ".[*]", properties, visited, projectProperties);
-                    } catch (IOException e) {
-                        getLogger().error("Failed to read file for type: {}", mapValueType, e);
+            if (mapValueType != null && isComplexType(mapValueType)) {
+                // record the map property itself as a node
+                properties.add(new PropertyInfo(fullPath, null, PropertySource.CONFIGURATION_PROPERTIES, filename));
+
+                if (!visited.contains(mapValueType)) {
+                    File typeFile = resolveTypeFile(mapValueType, javaFiles);
+                    if (typeFile != null) {
+                        try {
+                            String typeContent = Files.readString(typeFile.toPath());
+                            Set<String> nextVisited = new HashSet<>(visited);
+                            nextVisited.add(mapValueType);
+                            // [*] indicates a dynamic map key
+                            extractFieldProperties(typeFile.getName(), typeContent,
+                                    fullPath + ".[*]", properties, nextVisited, projectProperties);
+                        } catch (IOException e) {
+                            getLogger().error("Failed to read file for type: {}", mapValueType, e);
+                        }
                     }
                 }
-                // record the map property itself as a node as well
-                properties.add(new PropertyInfo(fullPath, null, PropertySource.CONFIGURATION_PROPERTIES, filename));
                 continue;
             }
 
             // Complex user-defined type → recurse into its fields
             String baseType = rawType.replaceAll("<.*>", "").trim();
-            if (isComplexType(baseType) && !visited.contains(baseType)) {
-                visited.add(baseType);
-                File typeFile = resolveTypeFile(baseType, javaFiles);
-                if (typeFile != null) {
-                    try {
-                        String typeContent = Files.readString(typeFile.toPath());
-                        extractFieldProperties(typeFile.getName(), typeContent,
-                                fullPath, properties, visited, projectProperties);
-                    } catch (IOException e) {
-                        getLogger().error("Failed to read file for type: {}", baseType, e);
+            if (isComplexType(baseType)) {
+                // Record the complex field itself
+                properties.add(new PropertyInfo(fullPath, null, PropertySource.CONFIGURATION_PROPERTIES, filename));
+
+                if (!visited.contains(baseType)) {
+                    File typeFile = resolveTypeFile(baseType, javaFiles);
+                    if (typeFile != null) {
+                        try {
+                            String typeContent = Files.readString(typeFile.toPath());
+                            Set<String> nextVisited = new HashSet<>(visited);
+                            nextVisited.add(baseType);
+                            extractFieldProperties(typeFile.getName(), typeContent,
+                                    fullPath, properties, nextVisited, projectProperties);
+                        } catch (IOException e) {
+                            getLogger().error("Failed to read file for type: {}", baseType, e);
+                        }
                     }
-                } else {
-                    // Type not found in sources (maybe external) — record the field as-is
-                    properties.add(new PropertyInfo(fullPath, null, PropertySource.CONFIGURATION_PROPERTIES, filename));
                 }
                 continue;
             }
