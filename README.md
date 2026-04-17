@@ -26,9 +26,9 @@ Name of the generated report file. Default: custom-properties-analysis.json
 Output path: build/reports/<filename>
 
 --additionalPropertiesPattern=<pattern>
-Glob pattern for additional .properties files to include in default value
-resolution. By default only application.properties is consulted.
-Example: --additionalPropertiesPattern="application-*.properties"
+Glob pattern for additional property files (e.g. .properties, .yml, .yaml) to include 
+in default value resolution. By default, application.properties/yml/yaml are consulted.
+Example: --additionalPropertiesPattern="application-*.yml"
 ```
 
 ## Add to your Spring Boot project
@@ -50,7 +50,8 @@ apply plugin: 'com.tpeters.custom-property-analyzer'
 ## Output
 
 By default, running the `analyzeCustomProperties` task will create a `.json` file with all properties that have been found
-in the analysis. It will be stored in `build/reports/custom-properties-analysis.json` in the following format:
+in the analysis. It will be stored in `build/reports/custom-properties-analysis.json`. The plugin automatically aggregates
+properties from all subprojects in multi-module setups.
 
 ```json
 {
@@ -84,16 +85,19 @@ in the analysis. It will be stored in `build/reports/custom-properties-analysis.
 }
 ```
 
+### Property Features
+- **Relaxed Binding:** Properties are normalized to canonical kebab-case (e.g., `myProperty` in Java matches `my-property` in YAML).
+- **Recursive Expansion:** `@ConfigurationProperties` classes are recursively analyzed. Complex nested objects and `Map<String, ComplexType>` (represented with `[*]`) are fully expanded.
+- **YAML Support:** Full support for nested YAML structures and list indexing (e.g., `app.servers[0].host`).
+
 ## Default Property Analysis
 
-By default, the plugin only checks for default properties values in these two cases:
+The plugin checks for default property values in these cases:
 
-1. `@Value` annotated properties are checked for a default in the form of `@Value(${my.prop:default})`
-2. Additionally, we check if the property is also defined in the `application.properties` file. Note that this file always takes precedence over the `@Value` default
+1. `@Value` annotated properties are checked for a hardcoded default (e.g., `@Value("${my.prop:default}")`).
+2. Properties defined in `application.properties`, `application.yml`, or `application.yaml`. These values take precedence over `@Value` defaults.
 
-If you want to check within additional `.properties` files, use the `--additionalPropertiesPattern` option. Here you can
-add a `.properties` file name regex. For example `--additionalPropertiesPattern="application-*.properties"` would match
-additional profiles such as `application-dev.propertis`, `application-docker.properties`, etc.
+If you want to check within additional profile-specific files, use the `--additionalPropertiesPattern` option. For example, `--additionalPropertiesPattern="application-*.yaml"` would match files like `application-dev.yaml` or `application-prod.yaml`.
 
 ## Verbose
 
@@ -111,7 +115,8 @@ Custom Property Analysis Results
   • app.api.key
     Location: EmailService.java
     
-  • app.email.enabled:true
+  • app.email.enabled
+    Default: true
     Location: EmailService.java
 
 @ConfigurationProperties Classes:
