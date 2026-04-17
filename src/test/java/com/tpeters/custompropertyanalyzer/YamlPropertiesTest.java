@@ -104,4 +104,26 @@ class YamlPropertiesTest extends AbstractPluginTest {
         // app.serverList[0] should match app.server-list[0]
         assertHasProperty("app.server-list[0]", "srv1", "VALUE_ANNOTATION");
     }
+
+    @Test
+    void testListOfComplexObjectsInYaml() throws IOException {
+        writeJavaSource(testProjectDir, "com.example", "ServerService", """
+            package com.example;
+            import org.springframework.beans.factory.annotation.Value;
+            public class ServerService {
+              @Value("${app.servers[0].host}")
+              private String host;
+            }
+            """);
+
+        writeResourcesFile(testProjectDir, "application.yml", """
+            app:
+              servers:
+                - host: localhost
+                  port: 8080
+            """);
+
+        runAnalyze();
+        assertHasProperty("app.servers[0].host", "localhost", "VALUE_ANNOTATION");
+    }
 }

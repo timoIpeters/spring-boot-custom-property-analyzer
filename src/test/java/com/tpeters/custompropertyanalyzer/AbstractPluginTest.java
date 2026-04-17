@@ -10,6 +10,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import static com.tpeters.custompropertyanalyzer.TestUtils.writeFile;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -54,12 +57,19 @@ public abstract class AbstractPluginTest {
      * Runs the analyzeCustomProperties task within the test project
      * @return The Gradle build result
      */
-    protected BuildResult runAnalyze() {
-        return GradleRunner.create()
+    protected BuildResult runAnalyze(String... extraArgs) {
+        List<String> args = new ArrayList<>();
+        args.add("analyzeCustomProperties");
+        args.addAll(Arrays.asList(extraArgs));
+
+        BuildResult result = GradleRunner.create()
             .withProjectDir(testProjectDir.toFile())
-            .withArguments("analyzeCustomProperties")
+            .withArguments(args)
             .withPluginClasspath()
             .build();
+
+        System.out.println(result.getOutput());
+        return result;
     }
 
     /**

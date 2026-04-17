@@ -106,4 +106,47 @@ class ConfigurationPropertiesTest extends AbstractPluginTest {
         runAnalyze();
         assertHasProperty("app.list.names", null, "CONFIGURATION_PROPERTIES");
     }
+
+    @Test
+    void testCircularDependency() throws IOException {
+        writeJavaSource(testProjectDir, "com.example", "ClassA", """
+            package com.example;
+            import org.springframework.boot.context.properties.ConfigurationProperties;
+            @ConfigurationProperties("circular")
+            public class ClassA {
+              private ClassB b;
+            }
+            """);
+
+        writeJavaSource(testProjectDir, "com.example", "ClassB", """
+            package com.example;
+            public class ClassB {
+              private ClassA a;
+            }
+            """);
+
+        // If recursion isn't handled, this would throw StackOverflowError
+        runAnalyze();
+        assertHasProperty("circular.b", null, "CONFIGURATION_PROPERTIES");
+    }
+
+    @Test
+    void testStaticNestedClass() throws IOException {
+        writeJavaSource(testProjectDir, "com.example", "OuterProperties", """
+            package com.example;
+            import org.springframework.boot.context.properties.ConfigurationProperties;
+            @ConfigurationProperties("outer")
+            public class OuterProperties {
+              private Nested nested;
+              public static class Nested {
+                private String inner;
+              }
+            }
+            """);
+
+        runAnalyze();
+        // Currently expected to fail resolving 'inner' because it's a nested class,
+        // but we record the 'nested' field itself.
+        assertHasProperty("outer.nested", null, "CONFIGURATION_PROPERTIES");
+    }
 }
