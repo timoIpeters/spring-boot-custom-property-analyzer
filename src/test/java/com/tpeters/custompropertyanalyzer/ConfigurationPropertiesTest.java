@@ -2,7 +2,6 @@ package com.tpeters.custompropertyanalyzer;
 
 import org.junit.jupiter.api.Test;
 import java.io.IOException;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static com.tpeters.custompropertyanalyzer.TestUtils.*;
 
 class ConfigurationPropertiesTest extends AbstractPluginTest {
@@ -20,9 +19,8 @@ class ConfigurationPropertiesTest extends AbstractPluginTest {
             """);
 
         runAnalyze();
-        String content = getReportContent();
-        assertTrue(content.contains("\"key\": \"app.name\""));
-        assertTrue(content.contains("\"key\": \"app.timeout\""));
+        assertHasProperty("app.name", null, "CONFIGURATION_PROPERTIES");
+        assertHasProperty("app.timeout", null, "CONFIGURATION_PROPERTIES");
     }
 
     @Test
@@ -38,9 +36,8 @@ class ConfigurationPropertiesTest extends AbstractPluginTest {
             """);
 
         runAnalyze();
-        String content = getReportContent();
-        assertTrue(content.contains("\"key\": \"service.config.maximum-retries\""));
-        assertTrue(content.contains("\"key\": \"service.config.ssl-enabled\""));
+        assertHasProperty("service.config.maximum-retries", null, "CONFIGURATION_PROPERTIES");
+        assertHasProperty("service.config.ssl-enabled", null, "CONFIGURATION_PROPERTIES");
     }
 
     @Test
@@ -64,10 +61,9 @@ class ConfigurationPropertiesTest extends AbstractPluginTest {
             """);
 
         runAnalyze();
-        String content = getReportContent();
-        assertTrue(content.contains("\"key\": \"server.host\""));
-        assertTrue(content.contains("\"key\": \"server.security.username\""));
-        assertTrue(content.contains("\"key\": \"server.security.password\""));
+        assertHasProperty("server.host", null, "CONFIGURATION_PROPERTIES");
+        assertHasProperty("server.security.username", null, "CONFIGURATION_PROPERTIES");
+        assertHasProperty("server.security.password", null, "CONFIGURATION_PROPERTIES");
     }
 
     @Test
@@ -91,9 +87,8 @@ class ConfigurationPropertiesTest extends AbstractPluginTest {
             """);
 
         runAnalyze();
-        String content = getReportContent();
-        assertTrue(content.contains("\"key\": \"app.map.simple-map\""));
-        assertTrue(content.contains("\"key\": \"app.map.complex-map.[*].info\""));
+        assertHasProperty("app.map.simple-map", null, "CONFIGURATION_PROPERTIES");
+        assertHasProperty("app.map.complex-map.[*].info", null, "CONFIGURATION_PROPERTIES");
     }
 
     @Test
@@ -109,7 +104,6 @@ class ConfigurationPropertiesTest extends AbstractPluginTest {
             """);
 
         runAnalyze();
-        String content = getReportContent();
-        assertTrue(content.contains("\"key\": \"app.list.names\""));
+        assertHasProperty("app.list.names", null, "CONFIGURATION_PROPERTIES");
     }
 }

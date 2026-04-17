@@ -1,5 +1,6 @@
 package com.tpeters.custompropertyanalyzer;
 
+import com.google.gson.Gson;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,6 +12,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static com.tpeters.custompropertyanalyzer.TestUtils.writeFile;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public abstract class AbstractPluginTest {
 
@@ -23,6 +26,8 @@ public abstract class AbstractPluginTest {
 
     /** Settings file of the test project */
     protected File settingsFile;
+
+    private final Gson gson = new Gson();
 
     @BeforeEach
     void setup() throws IOException {
@@ -58,16 +63,37 @@ public abstract class AbstractPluginTest {
     }
 
     /**
-     * Gets the content from the custom-properties-analysis.json, which is an output of the plugins
+     * Gets the content from the custom-properties-analysis.json as DTO, which is an output of the plugin's
      * analyzeCustomProperties task.
-     * @return String content of the custom-properties-analysis.json.
+     * @return Content of the custom-properties-analysis.json as simple Java DTO.
      * @throws IOException  If an I/O error occurs while parsing the .json file.
      */
-    protected String getReportContent() throws IOException {
+    protected AnalysisReport getReport() throws IOException {
         File reportFile = testProjectDir.resolve("build/reports/custom-properties-analysis.json").toFile();
         if (!reportFile.exists()) {
-            return "";
+            throw new RuntimeException("Report file not found!");
         }
-        return Files.readString(reportFile.toPath());
+        String content = Files.readString(reportFile.toPath());
+        return gson.fromJson(content, AnalysisReport.class);
+    }
+
+    /**
+     * Asserts that a property with a given key is set (not null) and has the expected default and source.
+     *
+     * @param key The property key
+     * @param expectedDefault The expected property default value
+     * @param expectedSource The expected {@link PropertySource}
+     * @throws IOException If an I/O error occurs while reading the analysis report
+     */
+    protected void assertHasProperty(String key, String expectedDefault, String expectedSource) throws IOException {
+        AnalysisReport report = getReport();
+        AnalysisReport.PropertyEntry entry = report.findProperty(key);
+        assertNotNull(entry, "Property not found: " + key);
+        if (expectedDefault != null) {
+            assertEquals(expectedDefault, entry.defaultValue, "Wrong default for " + key);
+        }
+        if (expectedSource != null) {
+            assertEquals(expectedSource, entry.source, "Wrong source for " + key);
+        }
     }
 }

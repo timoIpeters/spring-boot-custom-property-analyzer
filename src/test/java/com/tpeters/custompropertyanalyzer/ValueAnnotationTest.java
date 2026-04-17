@@ -2,7 +2,6 @@ package com.tpeters.custompropertyanalyzer;
 
 import org.junit.jupiter.api.Test;
 import java.io.IOException;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static com.tpeters.custompropertyanalyzer.TestUtils.*;
 
 class ValueAnnotationTest extends AbstractPluginTest {
@@ -19,8 +18,7 @@ class ValueAnnotationTest extends AbstractPluginTest {
             """);
 
         runAnalyze();
-        String content = getReportContent();
-        assertTrue(content.contains("\"key\": \"app.simple\""));
+        assertHasProperty("app.simple", null, "VALUE_ANNOTATION");
     }
 
     @Test
@@ -35,9 +33,7 @@ class ValueAnnotationTest extends AbstractPluginTest {
             """);
 
         runAnalyze();
-        String content = getReportContent();
-        assertTrue(content.contains("\"key\": \"app.default\""));
-        assertTrue(content.contains("\"defaultValue\": \"myDefaultValue\""));
+        assertHasProperty("app.default", "myDefaultValue", "VALUE_ANNOTATION");
     }
 
     @Test
@@ -52,9 +48,7 @@ class ValueAnnotationTest extends AbstractPluginTest {
             """);
 
         runAnalyze();
-        String content = getReportContent();
-        assertTrue(content.contains("\"key\": \"app.single.quote\""));
-        assertTrue(content.contains("\"defaultValue\": \"val\""));
+        assertHasProperty("app.single.quote", "val", "VALUE_ANNOTATION");
     }
 
     @Test
@@ -73,9 +67,7 @@ class ValueAnnotationTest extends AbstractPluginTest {
             """);
 
         runAnalyze();
-        String content = getReportContent();
-        assertTrue(content.contains("\"key\": \"app.override\""));
-        assertTrue(content.contains("\"defaultValue\": \"fromPropertiesFile\""));
+        assertHasProperty("app.override", "fromPropertiesFile", "VALUE_ANNOTATION");
     }
 
     @Test
@@ -90,8 +82,7 @@ class ValueAnnotationTest extends AbstractPluginTest {
             """);
 
         runAnalyze();
-        String content = getReportContent();
-        assertTrue(content.contains("\"key\": \"app.first\""));
-        assertTrue(content.contains("\"key\": \"app.second\""));
+        assertHasProperty("app.first", null, "VALUE_ANNOTATION");
+        assertHasProperty("app.second", "2", "VALUE_ANNOTATION");
     }
 }
