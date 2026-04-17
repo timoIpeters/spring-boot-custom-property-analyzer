@@ -7,11 +7,9 @@ import com.google.gson.JsonObject;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.Project;
 import org.gradle.api.file.FileTree;
-import org.gradle.api.tasks.Input;
-import org.gradle.api.tasks.Optional;
-import org.gradle.api.tasks.SourceSet;
-import org.gradle.api.tasks.SourceSetContainer;
-import org.gradle.api.tasks.TaskAction;
+import org.gradle.api.file.RegularFile;
+import org.gradle.api.provider.Provider;
+import org.gradle.api.tasks.*;
 import org.gradle.api.tasks.options.Option;
 
 import java.io.File;
@@ -119,11 +117,11 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     );
 
     @Input
-    @Optional
+    @org.gradle.api.tasks.Optional
     private String outputFile = "custom-properties-analysis.json";
 
     @Input
-    @Optional
+    @org.gradle.api.tasks.Optional
     private String additionalPropertiesPattern = null;
 
     @Input
@@ -155,9 +153,14 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
         return verboseMode;
     }
 
+    @OutputFile
+    public Provider<RegularFile> getReportFile() {
+        return getProject().getLayout().getBuildDirectory().file("reports/" + outputFile);
+    }
+
     @TaskAction
     public void analyze() {
-        Set<PropertyInfo> properties = new TreeSet<>(Comparator.comparing(PropertyInfo::getFullPath));
+        Set<PropertyInfo> properties = new TreeSet<>(Comparator.comparing(PropertyInfo::fullPath));
 
         Map<String, String> projectProperties = loadProjectProperties();
 
@@ -245,7 +248,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                         getLogger().lifecycle("Loaded properties from: " + propFile.getName());
                     }
                 } catch (IOException e) {
-                    getLogger().error("Failed to read properties file: " + propFile.getAbsolutePath(), e);
+                    getLogger().error("Failed to read properties file: {}", propFile.getAbsolutePath(), e);
                 }
             }
         }
@@ -260,7 +263,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             properties.addAll(extractValueProperties(filename, content, projectProperties));
             properties.addAll(extractConfigurationProperties(filename, content, projectProperties));
         } catch (IOException e) {
-            getLogger().error("Failed to read file: " + file.getAbsolutePath(), e);
+            getLogger().error("Failed to read file: {}", file.getAbsolutePath(), e);
         }
     }
 
@@ -359,7 +362,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                         extractFieldProperties(typeFile.getName(), typeContent,
                                 fullPath + ".[*]", properties, visited, projectProperties);
                     } catch (IOException e) {
-                        getLogger().error("Failed to read file for type: " + mapValueType, e);
+                        getLogger().error("Failed to read file for type: {}", mapValueType, e);
                     }
                 }
                 // record the map property itself as a node as well
@@ -378,7 +381,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                         extractFieldProperties(typeFile.getName(), typeContent,
                                 fullPath, properties, visited, projectProperties);
                     } catch (IOException e) {
-                        getLogger().error("Failed to read file for type: " + baseType, e);
+                        getLogger().error("Failed to read file for type: {}", baseType, e);
                     }
                 } else {
                     // Type not found in sources (maybe external) — record the field as-is
@@ -495,9 +498,8 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
      * @param properties - Set of PropertyInfos
      */
     private void exportToJson(Set<PropertyInfo> properties) {
-        File outputDir = new File(getProject().getBuildDir(), "reports");
-        outputDir.mkdirs();
-        File jsonFile = new File(outputDir, outputFile);
+        File jsonFile = getReportFile().get().getAsFile();
+        getProject().mkdir(jsonFile.getParentFile());
 
         Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
@@ -509,10 +511,10 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
         JsonArray propsArray = new JsonArray();
         for (PropertyInfo prop : properties) {
             JsonObject propObj = new JsonObject();
-            propObj.addProperty("key", prop.getFullPath());
-            propObj.addProperty("defaultValue", prop.getDefaultValue());
-            propObj.addProperty("source", prop.getSource().name());
-            propObj.addProperty("location", prop.getLocation());
+            propObj.addProperty("key", prop.fullPath());
+            propObj.addProperty("defaultValue", prop.defaultValue());
+            propObj.addProperty("source", prop.source().name());
+            propObj.addProperty("location", prop.location());
             propsArray.add(propObj);
         }
         root.add("properties", propsArray);
@@ -537,7 +539,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
 
         Map<PropertySource, List<PropertyInfo>> grouped = new HashMap<>();
         for (PropertyInfo prop : properties) {
-            grouped.computeIfAbsent(prop.getSource(), k -> new ArrayList<>()).add(prop);
+            grouped.computeIfAbsent(prop.source(), k -> new ArrayList<>()).add(prop);
         }
 
         for (PropertySource source : PropertySource.values()) {
@@ -546,11 +548,11 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                 getLogger().lifecycle(source.getDisplayName() + ":");
                 getLogger().lifecycle("─".repeat(50));
                 for (PropertyInfo prop : props) {
-                    getLogger().lifecycle("  • " + prop.getFullPath());
-                    if (prop.getDefaultValue() != null) {
-                        getLogger().lifecycle("    Default: " + prop.getDefaultValue());
+                    getLogger().lifecycle("  • " + prop.fullPath());
+                    if (prop.defaultValue() != null) {
+                        getLogger().lifecycle("    Default: " + prop.defaultValue());
                     }
-                    getLogger().lifecycle("    Location: " + prop.getLocation());
+                    getLogger().lifecycle("    Location: " + prop.location());
                     getLogger().lifecycle("");
                 }
             }
