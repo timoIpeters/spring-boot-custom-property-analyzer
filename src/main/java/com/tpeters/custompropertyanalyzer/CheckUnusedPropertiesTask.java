@@ -18,6 +18,32 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 
+/**
+ * Checks for properties that are defined in configuration files but never referenced
+ * in the project's Java source code.
+ * <p>
+ * This task reads the report produced by {@code analyzeCustomProperties} to obtain the
+ * set of all properties referenced in code, then compares it against the keys found in
+ * {@code application.properties}, {@code application.yml}, or {@code application.yaml}
+ * (+ additional files based on a glob pattern).
+ * Any key present in a configuration file but absent from the code is flagged as unused.
+ * <p>
+ * By default, the build <b>fails</b> if unused properties are found, making this task
+ * suitable as a CI gate. Pass {@code --ignoreUnused} to report without failing.
+ * <p>
+ * This task depends on {@code analyzeCustomProperties} and runs it automatically.
+ * <p>
+ * Usage:
+ * <pre>
+ *   ./gradlew checkUnusedProperties
+ *   ./gradlew checkUnusedProperties --verbose
+ *   ./gradlew checkUnusedProperties --outputFile=my-unused-report.json
+ *   ./gradlew checkUnusedProperties --ignoreUnused
+ *   ./gradlew checkUnusedProperties --additionalPropertiesPattern="application-*.yml"
+ * </pre>
+ *
+ * The report is written to {@code build/reports/unused-properties-report.json} by default.
+ */
 public class CheckUnusedPropertiesTask extends DefaultTask {
 
     private String analysisReportFile = "custom-properties-analysis.json";
@@ -26,69 +52,146 @@ public class CheckUnusedPropertiesTask extends DefaultTask {
     private boolean ignoreUnused = false;
     private boolean verboseMode = false;
 
+    /**
+     * The name of the analysis report file produced by {@code analyzeCustomProperties} to
+     * read referenced property keys from.
+     * Defaults to {@code custom-properties-analysis.json}.
+     * @return The analysis report file name
+     */
     @Input
     @org.gradle.api.tasks.Optional
     public String getAnalysisReportFile() {
         return analysisReportFile;
     }
 
+    /**
+     * The name of the generated JSON report file listing unused properties.
+     * <p>
+     * The file is written to {@code build/reports/<outputFile>}.
+     * Defaults to {@code unused-properties-report.json}.
+     * @return The unused properties output file name
+     */
     @Input
     @org.gradle.api.tasks.Optional
     public String getOutputFile() {
         return outputFile;
     }
 
+    /**
+     * Glob pattern for additional property files to include when scanning for unused keys,
+     * beyond the baseline {@code application.properties}, {@code application.yml}, and
+     * {@code application.yaml}.
+     * <p>
+     * Use this to include profile-specific files such as {@code application-prod.yml} in the
+     * unused property check. This option is independent of the same option on
+     * {@code analyzeCustomProperties} — set it based on which files you want to audit for
+     * orphaned keys.
+     * @return The additional properties glob pattern
+     */
     @Input
     @org.gradle.api.tasks.Optional
     public String getAdditionalPropertiesPattern() {
         return additionalPropertiesPattern;
     }
 
+    /**
+     * Whether to suppress build failure when unused properties are found.
+     * <p>
+     * When {@code false} (the default), the build fails if any unused properties are
+     * detected. When {@code true}, unused properties are reported in the JSON output
+     * and console but the build continues.
+     * @return True if ignore unused flag is set, otherwise false
+     */
     @Input
     public boolean getIgnoreUnused() {
         return ignoreUnused;
     }
 
+    /**
+     * Whether to print the full unused properties results to the console in addition
+     * to the JSON report. Defaults to {@code false}.
+     * @return True if verbose mode is enabled, otherwise false
+     */
     @Input
     public boolean getVerboseMode() {
         return verboseMode;
     }
 
+    /**
+     * Option to set a custom analysis report file name
+     *
+     * @param analysisReportFile Name of the analysis report produced by analyzeCustomProperties. Default: custom-properties-analysis.json
+     */
     @Option(option = "analysisReportFile", description = "Name of the analysis report produced by analyzeCustomProperties. Default: custom-properties-analysis.json")
     public void setAnalysisReportFile(String analysisReportFile) {
         this.analysisReportFile = analysisReportFile;
     }
 
+    /**
+     * Option to set a custom output file name
+     *
+     * @param outputFile Name of the generated unused-properties report file. Default: unused-properties-report.json
+     */
     @Option(option = "outputFile", description = "Name of the generated unused-properties report file. Default: unused-properties-report.json")
     public void setOutputFile(String outputFile) {
         this.outputFile = outputFile;
     }
 
+    /**
+     * Option to set an additional properties glob pattern
+     *
+     * @param additionalPropertiesPattern Glob pattern for additional property files to include (e.g. 'application-*.yml'). Should match what was passed to analyzeCustomProperties.
+     */
     @Option(option = "additionalPropertiesPattern", description = "Glob pattern for additional property files to include (e.g. 'application-*.yml'). Should match what was passed to analyzeCustomProperties.")
     public void setAdditionalPropertiesPattern(String additionalPropertiesPattern) {
         this.additionalPropertiesPattern = additionalPropertiesPattern;
     }
 
+    /**
+     * Option to enable/disable build failure when unused properties are detected
+     *
+     * @param ignoreUnused If set, unused properties are reported but the build does not fail.
+     */
     @Option(option = "ignoreUnused", description = "If set, unused properties are reported but the build does not fail.")
     public void setIgnoreUnused(boolean ignoreUnused) {
         this.ignoreUnused = ignoreUnused;
     }
 
+    /**
+     * Option to enable/disable verbose console outputs
+     *
+     * @param verboseMode Enable verbose console output.
+     */
     @Option(option = "verbose", description = "Enable verbose console output.")
     public void setVerboseMode(boolean verboseMode) {
         this.verboseMode = verboseMode;
     }
 
+    /**
+     * The analysis report file produced by {@code analyzeCustomProperties}, used as input
+     * to determine which property keys are referenced in code.
+     * Resolved to {@code build/reports/<analysisReportFile>}.
+     * @return The analysis report file provider
+     */
     @InputFile
     public Provider<RegularFile> getAnalysisReportFileProvider() {
         return getProject().getLayout().getBuildDirectory().file("reports/" + analysisReportFile);
     }
 
+    /**
+     * The output file to which the unused properties JSON report is written.
+     * Resolved to {@code build/reports/<outputFile>}.
+     * @return The report file provider
+     */
     @OutputFile
     public Provider<RegularFile> getReportFile() {
         return getProject().getLayout().getBuildDirectory().file("reports/" + outputFile);
     }
 
+    /**
+     * Task action that compares defined configuration keys against code-referenced keys
+     * and flags any that are unused.
+     */
     @TaskAction
     public void check() {
         Set<String> referencedKeys = loadReferencedKeys();

@@ -26,6 +26,26 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * Analyzes a Spring Boot project's Java source files to discover all custom properties
+ * defined via {@code @Value} and {@code @ConfigurationProperties} annotations.
+ * <p>
+ * The task scans all {@code .java} files in the main source set, extracts property keys
+ * and their default values, and writes the results to a JSON report file. Default values
+ * are resolved by consulting {@code application.properties}, {@code application.yml}, or
+ * {@code application.yaml} in {@code src/main/resources}. Additional profile-specific
+ * files can be included via {@link #getAdditionalPropertiesPattern()}.
+ * <p>
+ * Usage:
+ * <pre>
+ *   ./gradlew analyzeCustomProperties
+ *   ./gradlew analyzeCustomProperties --verbose
+ *   ./gradlew analyzeCustomProperties --outputFile=my-report.json
+ *   ./gradlew analyzeCustomProperties --additionalPropertiesPattern="application-*.yml"
+ * </pre>
+ *
+ * The report is written to {@code build/reports/custom-properties-analysis.json} by default.
+ */
 public class AnalyzeCustomPropertiesTask extends DefaultTask {
 
     /**
@@ -123,43 +143,91 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     private String additionalPropertiesPattern = null;
     private boolean verboseMode = false;
 
+    /**
+     * The name of the generated JSON report file.
+     * <p>
+     * The file is written to {@code build/reports/<outputFile>}.
+     * Defaults to {@code custom-properties-analysis.json}.
+     * @return The output file name
+     */
     @Input
     @org.gradle.api.tasks.Optional
     public String getOutputFile() {
         return outputFile;
     }
 
+    /**
+     * Glob pattern for additional property files to include in default value resolution,
+     * beyond the baseline {@code application.properties}, {@code application.yml}, and
+     * {@code application.yaml}.
+     * <p>
+     * Example values:
+     * <ul>
+     *   <li>{@code application-dev.properties} - exact file name</li>
+     *   <li>{@code application-dev*.properties} - all dev variant files</li>
+     *   <li>{@code application-*.yml} - all profile-specific YAML files</li>
+     * </ul>
+     * If not set, only the baseline files are consulted.
+     * @return The additional properties glob pattern
+     */
     @Input
     @org.gradle.api.tasks.Optional
     public String getAdditionalPropertiesPattern() {
         return additionalPropertiesPattern;
     }
 
+    /**
+     * Whether to print the full analysis results to the console in addition to the JSON report.
+     * Defaults to {@code false}.
+     * @return True if verbose mode is enabled, otherwise false
+     */
     @Input
     public boolean getVerboseMode() {
         return verboseMode;
     }
 
+    /**
+     * Option to set a custom output file
+     *
+     * @param outputFile The name of the generated JSON report file
+     */
     @Option(option = "outputFile", description = "The name of the generated JSON report file")
     public void setOutputFile(String outputFile) {
         this.outputFile = outputFile;
     }
 
+    /**
+     * Option to set an additional properties glob pattern
+     *
+     * @param additionalPropertiesPattern Glob pattern for additional .properties files to include in default value analysis (e.g. 'application-dev*.properties')
+     */
     @Option(option = "additionalPropertiesPattern", description = "Glob pattern for additional .properties files to include in default value analysis (e.g. 'application-dev*.properties')")
     public void setAdditionalPropertiesPattern(String additionalPropertiesPattern) {
         this.additionalPropertiesPattern = additionalPropertiesPattern;
     }
 
+    /**
+     * Option to enable/disable verbose mode
+     * @param verboseMode Enable verbose console output
+     */
     @Option(option = "verbose", description = "Enable verbose console output")
     public void setVerboseMode(boolean verboseMode) {
         this.verboseMode = verboseMode;
     }
 
+    /**
+     * The output file to which the JSON property report is written.
+     * Resolved to {@code build/reports/<outputFile>}.
+     * @return The output file provider, the JSON property is written to
+     */
     @OutputFile
     public Provider<RegularFile> getReportFile() {
         return getProject().getLayout().getBuildDirectory().file("reports/" + outputFile);
     }
 
+    /**
+     * Task action that drives the full property analysis.
+     */
     @TaskAction
     public void analyze() {
         Set<PropertyInfo> properties = new TreeSet<>(Comparator.comparing(PropertyInfo::fullPath));

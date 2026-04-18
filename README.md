@@ -58,18 +58,22 @@ Options:
 
 ## Add to your Spring Boot project
 
-```groovy
-buildscript {
-    repositories {
-        mavenLocal()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.tpeters:custom-property-analyzer-plugin:1.0.1-SNAPSHOT'
-    }
-}
+The plugin can be applied to any gradle project using the Plugin DSL.
 
-apply plugin: 'com.tpeters.custom-property-analyzer'
+### Groovy DSL (`build.gradle`)
+
+```groovy
+plugins {
+    id 'com.tpeters.custom-property-analyzer' version '2.0.0'
+}
+```
+
+### Kotlin DSL (`build.gradle.kts`)
+
+```kotlin
+plugins {
+    id("com.tpeters.custom-property-analyzer") version "2.0.0"
+}
 ```
 
 ## Tasks
