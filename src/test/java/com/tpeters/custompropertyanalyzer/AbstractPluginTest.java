@@ -15,8 +15,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static com.tpeters.custompropertyanalyzer.TestUtils.writeFile;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.*;
 
 public abstract class AbstractPluginTest {
 
@@ -73,6 +72,38 @@ public abstract class AbstractPluginTest {
     }
 
     /**
+     * Runs the checkUnusedProperties task within the test project.
+     * Uses forwardOutput() so failures print to the test console.
+     */
+    protected BuildResult runCheckUnused(String... extraArgs) {
+        List<String> args = new ArrayList<>();
+        args.add("checkUnusedProperties");
+        args.addAll(Arrays.asList(extraArgs));
+        return GradleRunner.create()
+                .withProjectDir(testProjectDir.toFile())
+                .withArguments(args)
+                .withPluginClasspath()
+                .forwardOutput()
+                .buildAndFail(); // default: expect failure when unused props exist
+    }
+
+    /**
+     * Same as runCheckUnused but expects the build to succeed (no unused props,
+     * or --ignoreUnused was passed).
+     */
+    protected BuildResult runCheckUnusedExpectSuccess(String... extraArgs) {
+        List<String> args = new ArrayList<>();
+        args.add("checkUnusedProperties");
+        args.addAll(Arrays.asList(extraArgs));
+        return GradleRunner.create()
+                .withProjectDir(testProjectDir.toFile())
+                .withArguments(args)
+                .withPluginClasspath()
+                .forwardOutput()
+                .build();
+    }
+
+    /**
      * Gets the content from the custom-properties-analysis.json as DTO, which is an output of the plugin's
      * analyzeCustomProperties task.
      * @return Content of the custom-properties-analysis.json as simple Java DTO.
@@ -85,6 +116,15 @@ public abstract class AbstractPluginTest {
         }
         String content = Files.readString(reportFile.toPath());
         return gson.fromJson(content, AnalysisReport.class);
+    }
+
+    protected UnusedPropertiesReport getUnusedReport() throws IOException {
+        File reportFile = testProjectDir.resolve("build/reports/unused-properties-report.json").toFile();
+        if (!reportFile.exists()) {
+            throw new RuntimeException("Unused properties report file not found!");
+        }
+        String content = Files.readString(reportFile.toPath());
+        return gson.fromJson(content, UnusedPropertiesReport.class);
     }
 
     /**
@@ -105,5 +145,15 @@ public abstract class AbstractPluginTest {
         if (expectedSource != null) {
             assertEquals(expectedSource, entry.source, "Wrong source for " + key);
         }
+    }
+
+    protected void assertIsUnused(String key) throws IOException {
+        UnusedPropertiesReport report = getUnusedReport();
+        assertNotNull(report.findProperty(key), "Expected property to be flagged as unused: " + key);
+    }
+
+    protected void assertIsNotUnused(String key) throws IOException {
+        UnusedPropertiesReport report = getUnusedReport();
+        assertNull(report.findProperty(key), "Expected property NOT to be flagged as unused: " + key);
     }
 }

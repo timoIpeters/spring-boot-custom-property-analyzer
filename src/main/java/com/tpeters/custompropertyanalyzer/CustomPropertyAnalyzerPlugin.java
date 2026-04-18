@@ -10,6 +10,10 @@ public class CustomPropertyAnalyzerPlugin implements Plugin<Project> {
         project.getPluginManager().apply("java");
 
         project.getTasks().register("analyzeCustomProperties", AnalyzeCustomPropertiesTask.class);
+
+        project.getTasks().register("checkUnusedProperties", CheckUnusedPropertiesTask.class, task -> {
+            task.dependsOn("analyzeCustomProperties");
+        });
     }
 
 }

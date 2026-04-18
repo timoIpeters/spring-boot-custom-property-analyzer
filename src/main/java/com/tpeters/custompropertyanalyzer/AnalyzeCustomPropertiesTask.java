@@ -119,21 +119,31 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             "BigDecimal", "BigInteger", "Duration", "LocalDate", "LocalDateTime"
     );
 
+    private String outputFile = "custom-properties-analysis.json";
+    private String additionalPropertiesPattern = null;
+    private boolean verboseMode = false;
+
     @Input
     @org.gradle.api.tasks.Optional
-    private String outputFile = "custom-properties-analysis.json";
+    public String getOutputFile() {
+        return outputFile;
+    }
+
+    @Input
+    @org.gradle.api.tasks.Optional
+    public String getAdditionalPropertiesPattern() {
+        return additionalPropertiesPattern;
+    }
+
+    @Input
+    public boolean getVerboseMode() {
+        return verboseMode;
+    }
 
     @Option(option = "outputFile", description = "The name of the generated JSON report file")
     public void setOutputFile(String outputFile) {
         this.outputFile = outputFile;
     }
-
-    @Input
-    @org.gradle.api.tasks.Optional
-    private String additionalPropertiesPattern = null;
-
-    @Input
-    private boolean verboseMode = false;
 
     @Option(option = "additionalPropertiesPattern", description = "Glob pattern for additional .properties files to include in default value analysis (e.g. 'application-dev*.properties')")
     public void setAdditionalPropertiesPattern(String additionalPropertiesPattern) {
@@ -143,18 +153,6 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     @Option(option = "verbose", description = "Enable verbose console output")
     public void setVerboseMode(boolean verboseMode) {
         this.verboseMode = verboseMode;
-    }
-
-    public String getAdditionalPropertiesPattern() {
-        return additionalPropertiesPattern;
-    }
-
-    public String getOutputFile() {
-        return outputFile;
-    }
-
-    public boolean getVerboseMode() {
-        return verboseMode;
     }
 
     @OutputFile
