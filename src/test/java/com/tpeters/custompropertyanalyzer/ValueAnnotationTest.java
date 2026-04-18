@@ -85,4 +85,29 @@ class ValueAnnotationTest extends AbstractPluginTest {
         assertHasProperty("app.first", null, "VALUE_ANNOTATION");
         assertHasProperty("app.second", "2", "VALUE_ANNOTATION");
     }
+
+    @Test
+    void testEnumValueAnnotation() throws IOException {
+        writeJavaSource(testProjectDir, "com.example", "SomeService", """
+            package com.example;
+            import org.springframework.beans.factory.annotation.Value;
+            public class SomeService {
+              @Value("${props.env1}") private DeploymentEnv env1;
+              @Value("${props.env2:LOCAL_DEV}") private DeploymentEnv env2;
+            }
+            """);
+
+        writeJavaSource(testProjectDir, "com.example", "DeploymentEnv", """
+            package com.example;
+            public enum DeploymentEnv {
+              STAGING,
+              PRODUCTION,
+              LOCAL_DEV;
+            }
+            """);
+
+        runAnalyze();
+        assertHasProperty("props.env1", null, "VALUE_ANNOTATION");
+        assertHasProperty("props.env2", "LOCAL_DEV", "VALUE_ANNOTATION");
+    }
 }

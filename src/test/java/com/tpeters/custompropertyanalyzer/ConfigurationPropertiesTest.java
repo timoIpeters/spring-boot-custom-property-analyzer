@@ -3,6 +3,7 @@ package com.tpeters.custompropertyanalyzer;
 import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import static com.tpeters.custompropertyanalyzer.TestUtils.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 class ConfigurationPropertiesTest extends AbstractPluginTest {
 
@@ -145,8 +146,68 @@ class ConfigurationPropertiesTest extends AbstractPluginTest {
             """);
 
         runAnalyze();
-        // Currently expected to fail resolving 'inner' because it's a nested class,
-        // but we record the 'nested' field itself.
-        assertHasProperty("outer.nested", null, "CONFIGURATION_PROPERTIES");
+        
+        AnalysisReport report = getReport();
+        assertNotNull(report.findProperty("outer.nested"), "Should have outer.nested");
+        assertNotNull(report.findProperty("outer.nested.inner"), "Should have outer.nested.inner");
+        assertNull(report.findProperty("outer.inner"), "Should NOT have outer.inner");
+    }
+
+    @Test
+    void testEnumProperty() throws IOException {
+        writeJavaSource(testProjectDir, "com.example", "Properties", """
+            package com.example;
+            import org.springframework.boot.context.properties.ConfigurationProperties;
+            @ConfigurationProperties("props")
+            public class Properties {
+              private DeploymentEnv env;
+            }
+            """);
+
+        writeJavaSource(testProjectDir, "com.example", "DeploymentEnv", """
+            package com.example;
+            public enum DeploymentEnv {
+              STAGING,
+              PRODUCTION,
+              LOCAL_DEV;
+            }
+            """);
+
+        writeResourcesFile(testProjectDir, "application.properties", """
+            props.env=LOCAL_DEV
+            """);
+
+        runAnalyze();
+
+        AnalysisReport report = getReport();
+        assertEquals(1, report.totalProperties);
+        assertHasProperty("props.env", "LOCAL_DEV", "CONFIGURATION_PROPERTIES");
+    }
+
+    @Test
+    void testNestedEnumProperty() throws IOException {
+        writeJavaSource(testProjectDir, "com.example", "OuterProperties", """
+            package com.example;
+            import org.springframework.boot.context.properties.ConfigurationProperties;
+            @ConfigurationProperties("outer")
+            public class OuterProperties {
+              private DeploymentEnv env;
+              public static enum DeploymentEnv {
+                STAGING,
+                PRODUCTION,
+                LOCAL_DEV;
+              }
+            }
+            """);
+
+        writeResourcesFile(testProjectDir, "application.properties", """
+            outer.env=LOCAL_DEV
+            """);
+
+        runAnalyze();
+
+        AnalysisReport report = getReport();
+        assertEquals(1, report.totalProperties);
+        assertHasProperty("outer.env", "LOCAL_DEV", "CONFIGURATION_PROPERTIES");
     }
 }

@@ -403,23 +403,52 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
     private Set<PropertyInfo> extractConfigurationProperties(String filename, String content, Map<String, String> projectProperties) {
         Set<PropertyInfo> properties = new HashSet<>();
         Matcher configPropsMatcher = CONFIG_PROPS_CLASS_PATTERN.matcher(content);
-        if (configPropsMatcher.find()) {
+        
+        while (configPropsMatcher.find()) {
             String prefix = configPropsMatcher.group(1);
-            extractFieldProperties(filename, content, prefix, properties, new HashSet<>(), projectProperties);
+            int start = configPropsMatcher.end();
+            String classBody = extractClassBody(content, start);
+            if (classBody != null) {
+                extractFieldProperties(filename, classBody, prefix, properties, new HashSet<>(), projectProperties, content);
+            }
         }
         return properties;
+    }
+
+    /**
+     * Extracts the body of a class starting after the class declaration.
+     * It looks for the first '{' and then finds the matching '}'.
+     */
+    private String extractClassBody(String content, int startIndex) {
+        int braceStart = content.indexOf('{', startIndex);
+        if (braceStart == -1) return null;
+
+        int braceCount = 1;
+        int i = braceStart + 1;
+        while (i < content.length() && braceCount > 0) {
+            char c = content.charAt(i);
+            if (c == '{') braceCount++;
+            else if (c == '}') braceCount--;
+            i++;
+        }
+
+        if (braceCount == 0) {
+            return content.substring(braceStart + 1, i - 1);
+        }
+        return null;
     }
 
 
     /**
      * Recursively extracts properties from a class body, following complex field
-     * types into their own source files.
+     * types into their own source files or nested class definitions.
      *
-     * @param filename   the file where these fields were found (for location reporting)
-     * @param content    the Java source content to scan for fields
-     * @param prefix     the current property key prefix (e.g. "app.database.author")
-     * @param properties the accumulator set
-     * @param visited    tracks already-visited type names to prevent infinite recursion
+     * @param filename     the file where these fields were found (for location reporting)
+     * @param content      the Java source content (class body) to scan for fields
+     * @param prefix       the current property key prefix (e.g. "app.database.author")
+     * @param properties   the accumulator set
+     * @param visited      tracks already-visited type names to prevent infinite recursion
+     * @param fullContent  the full content of the original file (to search for nested classes)
      */
     private void extractFieldProperties(
             String filename,
@@ -427,12 +456,16 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             String prefix,
             Set<PropertyInfo> properties,
             Set<String> visited,
-            Map<String, String> projectProperties
+            Map<String, String> projectProperties,
+            String fullContent
     ) {
         Project project = getProject();
         FileTree javaFiles = getJavaFiles(project);
 
-        Matcher fieldMatcher = FIELD_PATTERN.matcher(content);
+        // Strip nested class bodies to avoid matching their fields at this level
+        String fieldsOnlyContent = stripNestedClasses(content);
+        Matcher fieldMatcher = FIELD_PATTERN.matcher(fieldsOnlyContent);
+        
         while (fieldMatcher.find()) {
             String rawType  = fieldMatcher.group(1); // e.g. "Map<String,DatabaseConfig>", "Author", "boolean"
             String fieldName = fieldMatcher.group(2);
@@ -446,19 +479,7 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                 properties.add(new PropertyInfo(fullPath, null, PropertySource.CONFIGURATION_PROPERTIES, filename));
 
                 if (!visited.contains(mapValueType)) {
-                    File typeFile = resolveTypeFile(mapValueType, javaFiles);
-                    if (typeFile != null) {
-                        try {
-                            String typeContent = Files.readString(typeFile.toPath());
-                            Set<String> nextVisited = new HashSet<>(visited);
-                            nextVisited.add(mapValueType);
-                            // [*] indicates a dynamic map key
-                            extractFieldProperties(typeFile.getName(), typeContent,
-                                    fullPath + ".[*]", properties, nextVisited, projectProperties);
-                        } catch (IOException e) {
-                            getLogger().error("Failed to read file for type: {}", mapValueType, e);
-                        }
-                    }
+                    processComplexType(mapValueType, filename, fullPath + ".[*]", properties, visited, projectProperties, fullContent, javaFiles);
                 }
                 continue;
             }
@@ -466,22 +487,22 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
             // Complex user-defined type → recurse into its fields
             String baseType = rawType.replaceAll("<.*>", "").trim();
             if (isComplexType(baseType)) {
+
+                if (isEnumType(baseType, fullContent, javaFiles)) {
+                    properties.add(new PropertyInfo(
+                            fullPath,
+                            projectProperties.get(toCanonicalKey(fullPath)),
+                            PropertySource.CONFIGURATION_PROPERTIES,
+                            filename
+                    ));
+                    continue;
+                }
+
                 // Record the complex field itself
                 properties.add(new PropertyInfo(fullPath, null, PropertySource.CONFIGURATION_PROPERTIES, filename));
 
                 if (!visited.contains(baseType)) {
-                    File typeFile = resolveTypeFile(baseType, javaFiles);
-                    if (typeFile != null) {
-                        try {
-                            String typeContent = Files.readString(typeFile.toPath());
-                            Set<String> nextVisited = new HashSet<>(visited);
-                            nextVisited.add(baseType);
-                            extractFieldProperties(typeFile.getName(), typeContent,
-                                    fullPath, properties, nextVisited, projectProperties);
-                        } catch (IOException e) {
-                            getLogger().error("Failed to read file for type: {}", baseType, e);
-                        }
-                    }
+                    processComplexType(baseType, filename, fullPath, properties, visited, projectProperties, fullContent, javaFiles);
                 }
                 continue;
             }
@@ -494,6 +515,86 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                     filename
             ));
         }
+    }
+
+    /**
+     * Removes nested class bodies from the given content to prevent matching fields
+     * inside those nested classes.
+     */
+    private String stripNestedClasses(String content) {
+        StringBuilder sb = new StringBuilder();
+        int lastPos = 0;
+        // Match "class Name {" or "static class Name {"
+        Pattern classPattern = Pattern.compile("\\bclass\\s+\\w+\\b[^\\{]*\\{");
+        Matcher m = classPattern.matcher(content);
+        while (m.find()) {
+            sb.append(content, lastPos, m.start());
+            
+            // Find matching closing brace for this class
+            int braceCount = 1;
+            int i = m.end();
+            while (i < content.length() && braceCount > 0) {
+                char c = content.charAt(i);
+                if (c == '{') braceCount++;
+                else if (c == '}') braceCount--;
+                i++;
+            }
+            lastPos = i;
+        }
+        sb.append(content.substring(lastPos));
+        return sb.toString();
+    }
+
+    private void processComplexType(
+            String typeName,
+            String filename,
+            String fullPath,
+            Set<PropertyInfo> properties,
+            Set<String> visited,
+            Map<String, String> projectProperties,
+            String fullContent,
+            FileTree javaFiles
+    ) {
+        // Try to find as a nested class in the same file
+        String nestedClassBody = findNestedClassBody(fullContent, typeName);
+        if (nestedClassBody != null) {
+            Set<String> nextVisited = new HashSet<>(visited);
+            nextVisited.add(typeName);
+            extractFieldProperties(filename, nestedClassBody, fullPath, properties, nextVisited, projectProperties, fullContent);
+            return;
+        }
+
+        // Try to find as a separate .java file
+        File typeFile = resolveTypeFile(typeName, javaFiles);
+        if (typeFile != null) {
+            try {
+                String typeContent = Files.readString(typeFile.toPath());
+                Set<String> nextVisited = new HashSet<>(visited);
+                nextVisited.add(typeName);
+                
+                // For a separate file, we need to find the main class body
+                Pattern mainClassPattern = Pattern.compile("\\bclass\\s+" + typeName + "\\b[^\\{]*\\{");
+                Matcher m = mainClassPattern.matcher(typeContent);
+                if (m.find()) {
+                    String body = extractClassBody(typeContent, m.start());
+                    if (body != null) {
+                        extractFieldProperties(typeFile.getName(), body, fullPath, properties, nextVisited, projectProperties, typeContent);
+                    }
+                }
+            } catch (IOException e) {
+                getLogger().error("Failed to read file for type: {}", typeName, e);
+            }
+        }
+    }
+
+    private String findNestedClassBody(String fullContent, String typeName) {
+        // Find "class TypeName" with any modifiers before it, and capture everything until the opening brace
+        Pattern classPattern = Pattern.compile("\\bclass\\s+" + typeName + "\\b[^\\{]*\\{");
+        Matcher m = classPattern.matcher(fullContent);
+        if (m.find()) {
+            return extractClassBody(fullContent, m.start());
+        }
+        return null;
     }
 
     /**
@@ -555,6 +656,33 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                 && !baseType.equals("Map")
                 && !baseType.startsWith("List<")
                 && Character.isUpperCase(baseType.charAt(0));
+    }
+
+    /**
+     * Returns true if the given type name resolves to a Java enum, either as a
+     * nested enum in the provided fullContent or as a standalone .java file.
+     *
+     * @param typeName    simple type name to check (e.g. "Environment")
+     * @param fullContent full source of the file currently being analyzed
+     * @param javaFiles   file tree to search for standalone .java files
+     * @return true if the type is an enum
+     */
+    private boolean isEnumType(String typeName, String fullContent, FileTree javaFiles) {
+        // Check for a nested enum in the same file
+        if (fullContent.contains("enum " + typeName)) {
+            return true;
+        }
+        // Check for a standalone enum file
+        File typeFile = resolveTypeFile(typeName, javaFiles);
+        if (typeFile != null) {
+            try {
+                String typeContent = Files.readString(typeFile.toPath());
+                return typeContent.contains("enum " + typeName);
+            } catch (IOException e) {
+                getLogger().warn("Could not read file to check enum status: {}", typeFile.getName());
+            }
+        }
+        return false;
     }
 
     /**
