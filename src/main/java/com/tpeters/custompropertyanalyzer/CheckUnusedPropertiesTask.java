@@ -331,6 +331,30 @@ public class CheckUnusedPropertiesTask extends DefaultTask {
         return result;
     }
 
+    /**
+     * Recursively flattens a nested YAML map structure into a flat map of dot-notation keys.
+     * <p>
+     * For example, a YAML structure like:
+     * <pre>
+     * app:
+     *   server:
+     *     port: 8080
+     *   tags:
+     *     - admin
+     *     - ops
+     * </pre>
+     * is flattened into:
+     * <pre>
+     * app.server.port  → "8080"
+     * app.tags[0]      → "admin"
+     * app.tags[1]      → "ops"
+     * app.tags         → "[admin, ops]"   (list fallback entry)
+     * </pre>
+     *
+     * @param prefix  the current key prefix being built, empty string at the root level
+     * @param yamlMap the current nested map being processed
+     * @param result  the accumulator map where flattened key-value pairs are stored
+     */
     @SuppressWarnings("unchecked")
     private void flattenYaml(String prefix, Map<String, Object> yamlMap, Map<String, String> result) {
         for (Map.Entry<String, Object> entry : yamlMap.entrySet()) {
@@ -356,6 +380,15 @@ public class CheckUnusedPropertiesTask extends DefaultTask {
         }
     }
 
+    /**
+     * Writes the list of unused properties to the JSON report file at {@code build/reports/<outputFile>}.
+     * <p>
+     * The parent directory is created if it does not already exist. The report is
+     * written even when no unused properties are found, in which case
+     * {@code totalUnusedProperties} is {@code 0} and {@code unusedProperties} is empty.
+     *
+     * @param unusedProperties the sorted list of unused properties to include in the report
+     */
     private void exportToJson(List<UnusedProperty> unusedProperties) {
         File jsonFile = getReportFile().get().getAsFile();
         getProject().mkdir(jsonFile.getParentFile());
@@ -384,6 +417,14 @@ public class CheckUnusedPropertiesTask extends DefaultTask {
         }
     }
 
+    /**
+     * Prints a formatted summary of all unused properties to the Gradle lifecycle log.
+     * <p>
+     * Always invoked when unused properties exist. Also invoked when
+     * {@link #getVerboseMode()} is {@code true}, even if no unused properties were found.
+     *
+     * @param unusedProperties the sorted list of unused properties to print
+     */
     private void printResults(List<UnusedProperty> unusedProperties) {
         getLogger().lifecycle("\n========================================");
         getLogger().lifecycle("Unused Properties Check Results");
@@ -405,6 +446,13 @@ public class CheckUnusedPropertiesTask extends DefaultTask {
         getLogger().lifecycle("\nTotal unused properties: " + unusedProperties.size());
     }
 
+    /**
+     * Converts a full property key to its canonical kebab-case representation,
+     * normalizing each dot-separated segment individually.
+     *
+     * @param key the property key to normalize, may be a single segment or a full dot-notation key
+     * @return the normalized key in kebab-case, or {@code null} if the input is {@code null}
+     */
     private String toCanonicalKey(String key) {
         if (key == null) return null;
         String[] segments = key.split("\\.");
@@ -424,9 +472,16 @@ public class CheckUnusedPropertiesTask extends DefaultTask {
         return sb.toString();
     }
 
+    /**
+     * Converts a camelCase string to its kebab-case equivalent.
+     * <p>
+     * Inserts a hyphen between each lowercase-to-uppercase character transition
+     * and converts the entire string to lowercase.
+     *
+     * @param camelCase the camelCase string to convert
+     * @return the kebab-case equivalent
+     */
     private String camelToKebab(String camelCase) {
         return camelCase.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase();
     }
-
-    private record UnusedProperty(String key, String value) {}
 }

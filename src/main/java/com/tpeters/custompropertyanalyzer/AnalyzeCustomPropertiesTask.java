@@ -301,7 +301,12 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
                         .getPathMatcher("glob:" + additionalPropertiesPattern);
                 for (File f : allPropFiles) {
                     boolean isBaseline = false;
-                    for (String b : baselines) if (f.getName().equals(b)) isBaseline = true;
+                    for (String b : baselines) {
+                        if (f.getName().equals(b)) {
+                            isBaseline = true;
+                            break;
+                        }
+                    }
 
                     if (!isBaseline && matcher.matches(Path.of(f.getName()))) {
                         filesToLoad.add(f);
@@ -411,6 +416,13 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
         return sb.toString();
     }
 
+    /**
+     * Analyzes one .java file and collect's every {@code @Value} property or {@code @ConfigurationProperties} found
+     *
+     * @param file The .java file
+     * @param properties A TreeSet of all properties that were found so far
+     * @param projectProperties A Map of all project properties found within the application* files
+     */
     private void analyzeJavaFile(File file, Set<PropertyInfo> properties, Map<String, String> projectProperties) {
         try {
             String filename = file.getName();
@@ -611,6 +623,20 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
         return sb.toString();
     }
 
+    /**
+     * Resolves and recursively expands a complex type by locating its field definitions,
+     * either as a nested class within the current file or as a separate {@code .java} source file.
+     *
+     * @param typeName         the simple class name to resolve (e.g. {@code "DatabaseConfig"})
+     * @param filename         the file name to attribute discovered properties to in the report
+     * @param fullPath         the current property key prefix (e.g. {@code "app.database"})
+     * @param properties       the accumulator set of discovered properties
+     * @param visited          type names already visited in the current recursion chain
+     * @param projectProperties resolved default values from configuration files
+     * @param fullContent      the full source content of the file currently being analyzed,
+     *                         used to search for nested class definitions
+     * @param javaFiles        the file tree of all Java source files in the project
+     */
     private void processComplexType(
             String typeName,
             String filename,
@@ -653,6 +679,19 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
         }
     }
 
+    /**
+     * Searches for a nested class definition by name within the given source content and
+     * returns its body if found.
+     * <p>
+     * Matches the pattern {@code class TypeName} with any preceding modifiers (e.g.
+     * {@code public static class TypeName}) and extracts the content between the matching
+     * opening and closing braces via {@link #extractClassBody}.
+     *
+     * @param fullContent the full Java source content to search within
+     * @param typeName    the simple class name to locate (e.g. {@code "Author"})
+     * @return the class body as a string (excluding the outer braces), or {@code null} if
+     *         no class with that name was found in the content
+     */
     private String findNestedClassBody(String fullContent, String typeName) {
         // Find "class TypeName" with any modifiers before it, and capture everything until the opening brace
         Pattern classPattern = Pattern.compile("\\bclass\\s+" + typeName + "\\b[^\\{]*\\{");
@@ -817,6 +856,18 @@ public class AnalyzeCustomPropertiesTask extends DefaultTask {
         }
     }
 
+    /**
+     * Prints a formatted summary of all discovered properties to the Gradle lifecycle log.
+     * <p>
+     * Properties are grouped by their {@link PropertySource} and printed in source declaration
+     * order. For each property, the full key and location are always shown; the default value
+     * is only included if one was resolved.
+     * <p>
+     * Only invoked when {@link #getVerboseMode()} is {@code true}.
+     *
+     * @param properties the full set of discovered properties, pre-sorted by
+     *                   {@link PropertyInfo#fullPath()}
+     */
     private void printResults(Set<PropertyInfo> properties) {
         getLogger().lifecycle("\n========================================");
         getLogger().lifecycle("Custom Property Analysis Results");
