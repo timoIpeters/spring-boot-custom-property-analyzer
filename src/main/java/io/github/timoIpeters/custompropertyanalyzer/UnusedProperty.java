@@ -1,4 +1,4 @@
-package com.tpeters.custompropertyanalyzer;
+package io.github.timoIpeters.custompropertyanalyzer;
 
 /**
  * Represents a property, which has not been defined in the project properties but is not used in the code

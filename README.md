@@ -64,7 +64,7 @@ The plugin can be applied to any gradle project using the Plugin DSL.
 
 ```groovy
 plugins {
-    id 'com.tpeters.custom-property-analyzer' version '2.0.0'
+    id 'io.github.timoIpeters.custom-property-analyzer' version '2.0.0'
 }
 ```
 
@@ -72,7 +72,7 @@ plugins {
 
 ```kotlin
 plugins {
-    id("com.tpeters.custom-property-analyzer") version "2.0.0"
+    id("io.github.timoIpeters.custom-property-analyzer") version "2.0.0"
 }
 ```
 

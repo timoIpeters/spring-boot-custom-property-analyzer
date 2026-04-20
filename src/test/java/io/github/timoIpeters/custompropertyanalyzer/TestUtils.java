@@ -1,4 +1,4 @@
-package com.tpeters.custompropertyanalyzer;
+package io.github.timoIpeters.custompropertyanalyzer;
 
 import java.io.File;
 import java.io.FileWriter;

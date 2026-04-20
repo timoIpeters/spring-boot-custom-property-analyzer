@@ -1,4 +1,4 @@
-package com.tpeters.custompropertyanalyzer;
+package io.github.timoIpeters.custompropertyanalyzer;
 
 /**
  * Describes how a custom property was discovered during source analysis.

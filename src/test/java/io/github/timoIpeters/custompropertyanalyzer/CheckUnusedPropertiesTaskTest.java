@@ -1,4 +1,4 @@
-package com.tpeters.custompropertyanalyzer;
+package io.github.timoIpeters.custompropertyanalyzer;
 
 import org.gradle.testkit.runner.BuildResult;
 import org.junit.jupiter.api.Test;
@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.util.List;
 
-import static com.tpeters.custompropertyanalyzer.TestUtils.*;
+import static io.github.timoIpeters.custompropertyanalyzer.TestUtils.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CheckUnusedPropertiesTaskTest extends AbstractPluginTest {

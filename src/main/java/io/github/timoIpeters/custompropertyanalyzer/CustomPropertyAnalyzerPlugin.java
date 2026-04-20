@@ -1,4 +1,4 @@
-package com.tpeters.custompropertyanalyzer;
+package io.github.timoIpeters.custompropertyanalyzer;
 
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;

@@ -1,4 +1,4 @@
-package com.tpeters.custompropertyanalyzer;
+package io.github.timoIpeters.custompropertyanalyzer;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

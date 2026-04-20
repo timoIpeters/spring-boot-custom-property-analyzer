@@ -1,8 +1,8 @@
-package com.tpeters.custompropertyanalyzer;
+package io.github.timoIpeters.custompropertyanalyzer;
 
 import org.junit.jupiter.api.Test;
 import java.io.IOException;
-import static com.tpeters.custompropertyanalyzer.TestUtils.*;
+import static io.github.timoIpeters.custompropertyanalyzer.TestUtils.*;
 
 class ValueAnnotationTest extends AbstractPluginTest {
 

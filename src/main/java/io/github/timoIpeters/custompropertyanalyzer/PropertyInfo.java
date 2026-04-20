@@ -1,4 +1,4 @@
-package com.tpeters.custompropertyanalyzer;
+package io.github.timoIpeters.custompropertyanalyzer;
 
 /**
  * Represents a single custom property discovered during analysis of a Spring Boot project.

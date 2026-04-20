@@ -1,4 +1,4 @@
-package com.tpeters.custompropertyanalyzer;
+package io.github.timoIpeters.custompropertyanalyzer;
 
 import com.google.gson.Gson;
 import org.gradle.testkit.runner.BuildResult;
@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import static com.tpeters.custompropertyanalyzer.TestUtils.writeFile;
+import static io.github.timoIpeters.custompropertyanalyzer.TestUtils.writeFile;
 import static org.junit.jupiter.api.Assertions.*;
 
 public abstract class AbstractPluginTest {
@@ -47,7 +47,7 @@ public abstract class AbstractPluginTest {
         writeFile(buildFile, """
             plugins {
               id 'java'
-              id 'com.tpeters.custom-property-analyzer'
+              id 'io.github.timoIpeters.custom-property-analyzer'
             }
             """);
     }

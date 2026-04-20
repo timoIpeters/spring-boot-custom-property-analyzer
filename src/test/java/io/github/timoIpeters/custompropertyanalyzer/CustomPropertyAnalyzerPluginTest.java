@@ -1,4 +1,4 @@
-package com.tpeters.custompropertyanalyzer;
+package io.github.timoIpeters.custompropertyanalyzer;
 
 import org.gradle.api.Project;
 import org.gradle.testfixtures.ProjectBuilder;
@@ -11,13 +11,13 @@ import java.nio.file.Files;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static com.tpeters.custompropertyanalyzer.TestUtils.*;
+import static io.github.timoIpeters.custompropertyanalyzer.TestUtils.*;
 
 class CustomPropertyAnalyzerPluginTest extends AbstractPluginTest {
     @Test
     void pluginRegistersTask() {
         Project project = ProjectBuilder.builder().build();
-        project.getPlugins().apply("com.tpeters.custom-property-analyzer");
+        project.getPlugins().apply("io.github.timoIpeters.custom-property-analyzer");
 
         assertNotNull(project.getTasks().findByName("analyzeCustomProperties"));
     }
@@ -52,7 +52,7 @@ class CustomPropertyAnalyzerPluginTest extends AbstractPluginTest {
 
         writeFile(buildFile, """
             plugins {
-              id 'com.tpeters.custom-property-analyzer'
+              id 'io.github.timoIpeters.custom-property-analyzer'
             }
             subprojects {
               apply plugin: 'java'
